@@ -23,6 +23,11 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+const WELCOME_MESSAGE =
+  "Hi there, and welcome to Wimmera CMA! I'm your induction assistant. " +
+  "Ask me anything about our organisational policies and procedures — or, if you'd prefer, " +
+  "I can walk you through them with a short guided tour. Where would you like to start?";
+
 function createBackendAdapter(sessionId: string): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
@@ -64,7 +69,9 @@ function createBackendAdapter(sessionId: string): ChatModelAdapter {
 
 export const Assistant = () => {
   const [sessionId] = useState(() => crypto.randomUUID());
-  const runtime = useLocalRuntime(createBackendAdapter(sessionId));
+  const runtime = useLocalRuntime(createBackendAdapter(sessionId), {
+    initialMessages: [{ role: "assistant", content: WELCOME_MESSAGE }],
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
