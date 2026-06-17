@@ -21,6 +21,16 @@ class Settings(BaseSettings):
 
     frontend_origin: str = "http://localhost:3000"
 
+    database_url: str = "postgresql+asyncpg://induction:induction@localhost:5432/induction"
+
+    jwt_secret: str = ""
+    cookie_secure: bool = False
+
+    allowed_email_domain: str = "wcma.vic.gov.au"
+
+    admin_email: str = ""
+    admin_password: str = ""
+
 
 def get_settings() -> Settings:
     return Settings()

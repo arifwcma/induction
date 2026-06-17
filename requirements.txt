@@ -2,6 +2,12 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic-settings==2.7.1
 
+fastapi-users[sqlalchemy]==15.0.5
+fastapi-users-db-sqlalchemy==7.0.0
+sqlalchemy==2.0.51
+asyncpg==0.31.0
+greenlet==3.5.1
+
 llama-index-core==0.14.22
 llama-index-llms-openai==0.7.9
 llama-index-embeddings-openai==0.6.0
