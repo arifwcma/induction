@@ -1,17 +1,30 @@
+from dataclasses import dataclass
+
+import cohere
 from llama_index.core import VectorStoreIndex
-from llama_index.postprocessor.cohere_rerank import CohereRerank
 
 from app.config import get_settings
+from app.kb.bm25_index import load_bm25_store
 from app.rag.engine import configure_models, get_vector_store
 
 
-CANDIDATES_BEFORE_RERANK = 20
+DENSE_CANDIDATES = 20
+BM25_CANDIDATES = 20
 PASSAGES_AFTER_RERANK = 8
 RELEVANCE_FLOOR = 0.30
 
 
 _index = None
-_reranker = None
+_cohere_client = None
+_bm25_store = None
+
+
+@dataclass
+class Passage:
+    text_for_index: str
+    raw_text: str
+    metadata: dict
+    score: float = 0.0
 
 
 def get_index() -> VectorStoreIndex:
@@ -22,31 +35,86 @@ def get_index() -> VectorStoreIndex:
     return _index
 
 
-def get_reranker() -> CohereRerank:
-    global _reranker
-    if _reranker is None:
-        settings = get_settings()
-        _reranker = CohereRerank(
-            api_key=settings.cohere_api_key,
-            model=settings.cohere_rerank_model,
-            top_n=PASSAGES_AFTER_RERANK,
+def get_cohere_client() -> cohere.Client:
+    global _cohere_client
+    if _cohere_client is None:
+        _cohere_client = cohere.Client(api_key=get_settings().cohere_api_key)
+    return _cohere_client
+
+
+def get_bm25():
+    global _bm25_store
+    if _bm25_store is None:
+        _bm25_store = load_bm25_store()
+    return _bm25_store
+
+
+def dense_candidates(question: str) -> list[Passage]:
+    nodes = get_index().as_retriever(similarity_top_k=DENSE_CANDIDATES).retrieve(question)
+    passages = []
+    for node in nodes:
+        metadata = dict(node.node.metadata)
+        passages.append(
+            Passage(
+                text_for_index=node.node.get_content(),
+                raw_text=metadata.get("raw_text", node.node.get_content()),
+                metadata=metadata,
+            )
         )
-    return _reranker
+    return passages
 
 
-def retrieve_relevant_passages(question: str):
-    retriever = get_index().as_retriever(similarity_top_k=CANDIDATES_BEFORE_RERANK)
-    candidate_passages = retriever.retrieve(question)
-    if not candidate_passages:
+def bm25_candidates(question: str) -> list[Passage]:
+    store = get_bm25()
+    if store is None:
         return []
-    reranked_passages = get_reranker().postprocess_nodes(
-        candidate_passages,
-        query_str=question,
+    passages = []
+    for record in store.search(question, BM25_CANDIDATES):
+        passages.append(
+            Passage(
+                text_for_index=record["text_for_index"],
+                raw_text=record["raw_text"],
+                metadata=record["metadata"],
+            )
+        )
+    return passages
+
+
+def dedup_key(passage: Passage) -> tuple:
+    return (passage.metadata.get("clause_number", ""), passage.raw_text[:120])
+
+
+def fuse_candidates(dense: list[Passage], lexical: list[Passage]) -> list[Passage]:
+    fused = {}
+    for passage in dense + lexical:
+        fused.setdefault(dedup_key(passage), passage)
+    return list(fused.values())
+
+
+def rerank(question: str, candidates: list[Passage]) -> list[Passage]:
+    if not candidates:
+        return []
+    documents = [passage.text_for_index for passage in candidates]
+    response = get_cohere_client().rerank(
+        model=get_settings().cohere_rerank_model,
+        query=question,
+        documents=documents,
+        top_n=min(PASSAGES_AFTER_RERANK, len(documents)),
     )
-    return reranked_passages
+    reranked = []
+    for result in response.results:
+        passage = candidates[result.index]
+        passage.score = result.relevance_score
+        reranked.append(passage)
+    return reranked
 
 
-def top_passage_is_confident(passages) -> bool:
+def retrieve_relevant_passages(question: str) -> list[Passage]:
+    candidates = fuse_candidates(dense_candidates(question), bm25_candidates(question))
+    return rerank(question, candidates)
+
+
+def top_passage_is_confident(passages: list[Passage]) -> bool:
     if not passages:
         return False
-    return passages[0].score is not None and passages[0].score >= RELEVANCE_FLOOR
+    return passages[0].score >= RELEVANCE_FLOOR

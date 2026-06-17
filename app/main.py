@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from fastapi_users.password import PasswordHelper
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel
-from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
+from starlette.concurrency import run_in_threadpool
 
 from app.admin_store import get_user, list_users, set_user_password, set_user_role
 from app.auth import auth_backend, current_active_user, current_admin, current_trainer, fastapi_users
@@ -42,7 +42,8 @@ from app.config import get_settings
 from app.config_store import ensure_prompt_seeded, get_system_prompt, update_system_prompt
 from app.db import async_session_maker, create_db_and_tables
 from app.models import User
-from app.rag.chat import DEFAULT_SYSTEM_PROMPT, answer_stream, summarise_conversation
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, stream_in_pieces, summarise_conversation
+from app.rag.pipeline import produce_grounded_answer
 from app.schemas import UserCreate, UserRead, UserUpdate
 
 
@@ -117,15 +118,13 @@ async def chat(request: ChatRequest, user: User = Depends(current_active_user)):
             )
             system_prompt = await get_system_prompt(db, DEFAULT_SYSTEM_PROMPT)
 
-            answer_pieces = []
-            stream = answer_stream(
-                system_prompt, history, cross_session_context, request.message
+            answer_text = await produce_grounded_answer(
+                db, history, cross_session_context, system_prompt, request.message
             )
-            async for delta in iterate_in_threadpool(stream):
-                answer_pieces.append(delta)
-                yield delta
 
-            answer_text = "".join(answer_pieces)
+            for piece in stream_in_pieces(answer_text):
+                yield piece
+
             await persist_turn(db, chat_session.id, request.message, answer_text)
 
             updated_history = history + [

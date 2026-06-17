@@ -5,7 +5,7 @@ from docx import Document as DocxFile
 from llama_index.core import Document
 from llama_index.core.node_parser import SentenceSplitter
 
-from app.ingest import CHUNK_OVERLAP, CHUNK_SIZE, detect_scope
+from app.kb.contextual import CHUNK_OVERLAP, CHUNK_SIZE
 from app.rag.engine import get_vector_store
 from app.rag.retrieval import get_index
 
@@ -39,20 +39,25 @@ def extract_text_from_upload(filename: str, data: bytes) -> str:
 
 
 def add_text_to_knowledge_base(text: str, source_label: str, trainer_name: str, kb_entry_id: str):
-    document = Document(
-        text=text,
-        id_=kb_entry_id,
-        metadata={
-            "source": source_label,
-            "origin": "trainer",
-            "trainer": trainer_name,
-            "scope": detect_scope(text),
-            "kb_entry_id": kb_entry_id,
-        },
-    )
     splitter = SentenceSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    nodes = splitter.get_nodes_from_documents([document])
-    get_index().insert_nodes(nodes)
+    header = f"[Trainer-provided knowledge from {trainer_name}] {source_label}\nScope: general provision."
+    index = get_index()
+    for piece in splitter.split_text(text):
+        document = Document(
+            text=f"{header}\n\n{piece}",
+            metadata={
+                "source": source_label,
+                "origin": "trainer",
+                "trainer": trainer_name,
+                "scope": "general",
+                "condition": "",
+                "clause_number": "",
+                "raw_text": piece,
+                "kb_entry_id": kb_entry_id,
+            },
+        )
+        document.id_ = kb_entry_id
+        index.insert(document)
 
 
 def remove_from_knowledge_base(kb_entry_id: str):

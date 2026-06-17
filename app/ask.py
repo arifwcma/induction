@@ -1,6 +1,13 @@
 import sys
 
-from app.rag.chat import DEFAULT_SYSTEM_PROMPT, answer_stream
+from app.rag.chat import (
+    DEFAULT_SYSTEM_PROMPT,
+    UNSURE_RESPONSE,
+    format_context,
+    generate_answer,
+    verify_answer,
+)
+from app.rag.retrieval import retrieve_relevant_passages, top_passage_is_confident
 
 
 def ask_cli():
@@ -9,9 +16,18 @@ def ask_cli():
         print('Usage: python -m app.ask "your question"')
         return
 
-    for piece in answer_stream(DEFAULT_SYSTEM_PROMPT, [], "", question):
-        print(piece, end="", flush=True)
-    print()
+    passages = retrieve_relevant_passages(question)
+    if not top_passage_is_confident(passages):
+        print(UNSURE_RESPONSE)
+        return
+
+    context_block = format_context(passages, [])
+    answer = generate_answer(DEFAULT_SYSTEM_PROMPT, [], context_block, question)
+    verdict = verify_answer(context_block, question, answer)
+    if not verdict.passed:
+        print(UNSURE_RESPONSE)
+        return
+    print(answer)
 
 
 if __name__ == "__main__":
