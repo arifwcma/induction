@@ -13,8 +13,8 @@ CASES = [
             "I attended the office at 8 AM and left at 4 PM, with lunch from 12:00 to 12:30. "
             "On a normal day, does my lunch break count as time worked?"
         ),
-        "expect_contains_any": ["23", "break"],
-        "expect_absent_all": ["AIIMS", "Appendix C", "emergency"],
+        "expect_contains_any": ["unpaid", "does not count", "not count", "23.2"],
+        "expect_absent_all": ["AIIMS", "Appendix C", "counted as time worked"],
         "expect_abstain": False,
     },
     {
@@ -26,10 +26,27 @@ CASES = [
         "expect_abstain": False,
     },
     {
-        "name": "out of scope question must abstain",
+        "name": "out of scope question is declined and redirected",
         "category": "out-of-scope",
         "question": "What is the wifi password for the Melbourne office?",
-        "expect_abstain": True,
+        "expect_contains_any": ["not", "IT", "manager", "People", "cover"],
+        "expect_absent_all": ["password is"],
+        "expect_abstain": False,
+    },
+    {
+        "name": "capability question gets a helpful overview, not a dead-end",
+        "category": "meta",
+        "question": "What can you help me with?",
+        "expect_contains_any": ["help", "leave", "polic", "enterprise", "hours"],
+        "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
+    },
+    {
+        "name": "broad topic prompts a focused clarification, not a dead-end",
+        "category": "clarify",
+        "question": "Tell me about leaves and breaks.",
+        "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
     },
     {
         "name": "annual leave is covered and answered",

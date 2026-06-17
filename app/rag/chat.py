@@ -22,6 +22,11 @@ DEFAULT_SYSTEM_PROMPT = (
     "- Never apply a conditional passage to a situation where its condition does not hold. If the "
     "question describes an ordinary situation, use the general provision even if a conditional "
     "passage looks textually similar.\n"
+    "- Provisions about emergency work, incident response, or AIIMS activation (including any "
+    "appendix marked conditional) apply ONLY when the employee's own situation is an actual "
+    "emergency activation. For ordinary day-to-day questions you MUST ignore those provisions "
+    "entirely and answer only from the general provisions, even if the emergency text matches the "
+    "wording more closely. Do not cite numbering that appears inside such an appendix.\n"
     "- When provisions interact, the more specific governing provision wins; and where the National "
     "Employment Standards (NES) give a greater benefit, the NES prevails (see clause 4.3).\n"
     "- If you rely on a conditional provision, state the condition explicitly.\n\n"
@@ -48,17 +53,37 @@ UNSURE_RESPONSE = (
     "by the documents, your manager or People & Culture is the right place to ask."
 )
 
+CLARIFY_INSTRUCTION = (
+    "You are the induction assistant for new employees at the Wimmera Catchment Management Authority "
+    "(Wimmera CMA). You answer questions grounded in the official induction documents and enterprise "
+    "agreement, covering topics such as leave, hours of work, breaks, pay, allowances, conduct, and "
+    "general procedures.\n\n"
+    "The employee's message below could not be matched to a specific policy passage. Respond briefly "
+    "and helpfully, in one of these ways:\n"
+    "- If it is a greeting or asks what you can do: say in 1-2 sentences what you help with and invite "
+    "a specific question.\n"
+    "- If it names a broad topic (e.g. 'leave', 'breaks'): acknowledge it is covered and ask ONE "
+    "focused question about which aspect they mean (e.g. which type of leave).\n"
+    "- If it is clearly outside induction/HR-policy scope (e.g. IT passwords, building access): say it "
+    "is not something the induction materials cover and point them to the right team or their manager.\n\n"
+    "Do NOT state any specific policy rule, number, entitlement, or clause content. Do not invent "
+    "facts. Keep it to a few sentences.\n\n"
+    "Conversation so far:\n{transcript}\n\nEmployee message: {message}\n\nYour reply:"
+)
+
 VERIFIER_INSTRUCTION = (
     "You are a reviewer checking an answer for an HR induction assistant. Using ONLY the source "
     "material below, decide whether the answer is safe to send.\n\n"
-    "FAIL the answer only if one of these serious problems is present:\n"
+    "FAIL the answer if any of these problems is present:\n"
     "- It states a fact that is not supported anywhere in the source material.\n"
-    "- It relies on a 'conditional' provision for a situation where that condition is not actually "
-    "true (for example, using an emergency-only provision for an ordinary day).\n"
+    "- SCOPE VIOLATION (most important): the answer's substance is drawn from a passage marked "
+    "'conditional' (for example an emergency / AIIMS / incident-response appendix) while the question "
+    "describes an ordinary, non-emergency situation. If the question is about a normal working day and "
+    "the answer relies on emergency or appendix content, you MUST fail it - even if the wording matches.\n"
     "- It cites a clause or document that does not appear in the source material at all.\n\n"
-    "Do NOT fail the answer for minor issues: if the substance is supported by the sources, accept "
-    "it even if a slightly different clause number would have been a better citation, or the wording "
-    "is imperfect. When in doubt and the substance is supported, pass.\n\n"
+    "Be lenient on minor citation imprecision: if the substance is supported by a GENERAL provision, "
+    "accept it even if a slightly different clause number would have been a better citation. But never "
+    "be lenient about scope violations.\n\n"
     "Reply with exactly one line: 'VERDICT: pass' or 'VERDICT: fail - <short reason>'.\n\n"
     "Source material:\n{context}\n\nQuestion:\n{question}\n\nAnswer under review:\n{answer}\n\nVerdict:"
 )
@@ -72,7 +97,9 @@ class VerifierVerdict:
 
 def build_llm() -> OpenAI:
     settings = get_settings()
-    return OpenAI(model=settings.openai_chat_model, api_key=settings.openai_api_key)
+    return OpenAI(
+        model=settings.openai_chat_model, api_key=settings.openai_api_key, temperature=0
+    )
 
 
 def format_transcript(history: list[ChatMessage]) -> str:
@@ -146,6 +173,12 @@ def verify_answer(context_block: str, question: str, answer: str) -> VerifierVer
     passed = "verdict: pass" in verdict_text.lower()
     reason = verdict_text.split("-", 1)[1].strip() if "-" in verdict_text else ""
     return VerifierVerdict(passed=passed, reason=reason)
+
+
+def clarify_or_scope_response(history: list[ChatMessage], message: str) -> str:
+    llm = build_llm()
+    prompt = CLARIFY_INSTRUCTION.format(transcript=format_transcript(history), message=message)
+    return llm.complete(prompt).text.strip()
 
 
 def stream_in_pieces(text: str):
