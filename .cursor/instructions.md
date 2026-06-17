@@ -86,6 +86,14 @@ Abstract gritty mechanical details (boundary checks, clamping, index arithmetic,
 
 
 
+# DOMAIN LITERACY — WHAT TO ASSUME WHEN EXPLAINING
+
+1. ~15 years in web development: assume strong command of web stacks and general relational-DB persistence. Do not explain these.
+2. ML foundations are solid (recent ML PhD; comfortable with PyTorch-based deep learning at a fundamental level). Do not explain DL basics.
+3. The genuine gap is modern LLMs: how they reason, and how they are used in practice (RAG, MCP, LoRA, vector databases, embeddings, etc.). Arif is learning these as the project progresses. When these come up, explain the LLM-specific concept clearly and briefly; assume no prior familiarity with the LLM-specific part, while not re-explaining the web/DB/DL fundamentals he already knows.
+
+
+
 When you are in Ask mode and Arif asks for a code change, do NOT write the code. Instead, briefly remind Arif to switch to Agent mode and stop. Never paste implementation code while in Ask mode.
 
 
