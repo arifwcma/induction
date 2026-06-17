@@ -19,8 +19,12 @@ A fast, concise, ChatGPT-like assistant for new Wimmera CMA employees. It answer
 11. Cite the source (document + section/page); say when an answer came from trainer-added knowledge.
 12. Never answer on lexical match alone (Bug1).
 
-## 3. Bug1 (the target failure)
-Asked whether a 12:00-12:30 lunch counts as time worked, the old chunk-RAG bot answered from the conditional Emergency-work appendix (applies only under AIIMS incident control) and missed the governing general clause (~23.3: no more than 5 consecutive hours without a break). Root cause: top-k vector similarity retrieved the lexically-similar appendix and never surfaced/respected the governing clause. The fix is a retrieval pipeline that maximises recall of the governing clause, reranks by true relevance, tags conditional scope, and gates on confidence — plus a system prompt that reasons about which clause governs.
+## 3. Bug1 (the target failure) and the fundamental problem behind it
+Asked whether a 12:00-12:30 lunch counts as time worked, the old chunk-RAG bot answered from the conditional Appendix C: Emergency Work (applies only under emergency activation) and missed the governing clause 23 (Rest Breaks / Meal Breaks). The EA is hierarchical: clause 23 (p.28), clause 24 Emergency Response (p.28), Appendix C (p.71). The fundamental problem is NOT emergency-specific: a clause's applicability (emergency-only, casual-only, probation-only, etc.) is set by its place in the heading hierarchy, which naive chunking severs from the chunk text. So no reranker or keyword can reliably know a chunk is conditional.
+
+REJECTED FIX (do not reproduce): a keyword `detect_scope` matching "AIIMS/incident control" plus emergency-specific prompt lines. That only patches the one known case and is a hack.
+
+CORRECT FIX: make every chunk carry its own structural context at ingestion (Anthropic Contextual Retrieval), plus grounded/verified generation, calibrated abstention, and an eval harness. See section 6.
 
 ## 4. Stack (pinned)
 1. LLM + embeddings: OpenAI `gpt-4o-mini` (chat), `text-embedding-3-small` (embeddings), via LlamaIndex.
@@ -68,32 +72,31 @@ Request flow for `/chat` (per turn):
 6. Stream the answer (see pipeline), running the blocking generation in a threadpool (`starlette.concurrency.iterate_in_threadpool`) so the event loop is not blocked.
 7. After streaming: persist the user + assistant messages; regenerate this session's summary (threadpool LLM call) and store it.
 
-## 6. Retrieval pipeline (the Bug1 fix) — exact behaviour
-Module `app/rag/retrieval.py` and `app/rag/chat.py`. Constants:
-- `CANDIDATES_BEFORE_RERANK = 20` (dense top-k from Qdrant).
-- `PASSAGES_AFTER_RERANK = 8` (Cohere `top_n`).
-- `RELEVANCE_FLOOR = 0.30` (confidence gate on the top reranked score).
-- Ingestion chunking: `SentenceSplitter(chunk_size=700, chunk_overlap=150)`.
+## 6. Reliability stack (the real fix) — four layers + measurement
+This replaces the keyword-scope pipeline. Scope is solved at ingestion, generically.
 
-Steps in `answer_stream(system_prompt, history, cross_session_context, message)`:
-1. Condense: if there is history, rewrite the latest message into a standalone question via one `llm.complete` call (so follow-ups retrieve correctly).
-2. Retrieve: dense vector search, top 20 candidates from Qdrant.
-3. Rerank: Cohere cross-encoder reorders candidates by true relevance; keep top 8 with scores.
-4. Gate: if no passages or `passages[0].score < RELEVANCE_FLOOR`, stream the UNSURE response (clarify + point to manager/People & Culture) and stop. This enforces "no guessing".
-5. Build messages: `[system prompt]`, optional `[system: cross-session context]`, `[system: source passages with citation labels]`, `[...history...]`, `[user message]`.
-6. Stream the answer from `gpt-4o-mini`.
+### 6A. Knowledge representation
+1. Structure-aware parsing: split by real structure — EA clause numbers (`23`, `23.1`, `Appendix C`) via regex on numbered headings; DOCX heading styles; strip page noise (`OFFICIAL`, running headers, `N of 79`). Record per unit: clause number, title, parent path, page.
+2. Contextual chunking (keystone): for each chunk prepend (a) a deterministic breadcrumb (`EA 2024-2028 > 23. REST BREAKS / MEAL BREAKS > 23.3`) and (b) a 50-100 token LLM-written situating-context that states the chunk's scope/conditions, generated with the full document available (prompt-cached). This contextualised text is what gets embedded AND BM25-indexed.
+3. Structured clause model for the EA: a table of clauses `{number, title, scope, parent, cross_refs}` so applicability is queryable data, not inferred. Populated at ingest from the parse + an LLM scope extraction.
 
-## 7. Ingestion + scope tagging (`app/ingest.py`)
-1. PDF: PyMuPDF, page-level `Document`s with metadata `{source, page, scope}`.
-2. DOCX: heading-aware. Walk paragraphs; a paragraph whose style starts with "Heading" (or "Title") starts a new section; emit one `Document` per section with metadata `{source, section, scope}`; tables appended as a "Tables" section.
-3. Scope tag: `detect_scope(text)` returns `"emergency-only"` if the text contains any of `["AIIMS", "incident control", "incident management team"]`, else `"general"`. Surfaced in the citation label as "(conditional: emergency / AIIMS incident control only)" so the model knows not to apply it to ordinary questions.
-4. Ingestion clears the collection then re-ingests (clean, no stale vectors), chunking via `SentenceSplitter(700/150)`. Metadata propagates to chunks.
+### 6B. Retrieval
+4. Hybrid: dense (Qdrant) + BM25 (keyword; catches exact refs like "23.3"), results fused.
+5. Cohere cross-encoder rerank to top-k (the contextualised chunk text means the reranker now sees conditionality).
+6. Expansion: from the structured clause model, add the full governing clause + any cross-referenced clauses so interactions are visible to the generator.
 
-## 8. Citations (`citation_label` in `app/rag/chat.py`)
-- Trainer origin -> `"{source} (trainer-provided)"`.
-- PDF -> `"{source}, p.{page}"`; DOCX -> `"{source}, section: {section}"`.
-- emergency-only scope appends the conditional note.
-- The system prompt instructs the model to cite every substantive claim using these labels and to state when info is trainer-provided.
+### 6C. Grounded generation
+7. Generic scope/precedence prompt (NO hardcoded keywords): obey any condition stated in a passage's context; a conditional clause governs only if its condition is met; apply precedence (NES-overrides per EA clause 4.3; specific-over-general).
+8. Span-grounded citations: every substantive claim anchored to a verbatim span + clause number.
+9. Verifier pass: a cheap second LLM call checks each claim is supported by a retrieved span, the cited clause exists (against the clause model) and is in-scope, and no interacting clause was ignored. Fail -> regenerate once; still fail -> abstain.
+10. Calibrated abstention: rerank confidence + verifier verdict decide answer / clarify / route to People & Culture. The verifier runs in PARALLEL with streaming the draft (intervene only on failure) so latency stays near current (+ ~1-3s worst case).
+
+### 6D. Measurement and feedback
+11. Eval harness (first-class deliverable): adversarial cases across scope, clause-interaction, scenario/computation (the 0-vs-30 case), out-of-scope (must abstain), citation-correctness; per-category pass rates; runs as a regression gate.
+12. Observability: log retrieved clauses, scores, verifier verdicts per turn; flagged answers feed the eval set.
+13. Trainer-content guard: trainer KB is scoped and still subject to grounding/verification; it cannot silently override authoritative clauses.
+
+Constants (initial, tuned by the eval): dense top ~20, BM25 top ~20, rerank top ~8, situating-context 50-100 tokens. Honest residual: target is calibration not perfection; gold eval answers need human validation.
 
 ## 9. Memory model
 - Within a session: full message history loaded from Postgres each turn (not an in-process buffer).

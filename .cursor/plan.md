@@ -32,20 +32,52 @@ Reliability over cost. The bot must never guess or hallucinate; when unsure it s
 12. The bot must never answer on lexical match alone (Bug1: the leave-vs-emergency-appendix / clause-23.3 bug).
 
 ### Locked decisions
-1. KB handling (req 12): RERANKER PIPELINE. This OVERRIDES the earlier "full KB in context + prompt caching" decision recorded in `handover.md`. Pipeline = section-aware chunks with metadata + generous dense retrieval + Cohere cross-encoder rerank + confidence gate + citations. The full-KB-in-context approach is noted as a fallback and the reranker/hierarchical path is also the M2 direction for a big KB.
-2. Reranker vendor: Cohere Rerank (env-configurable `COHERE_API_KEY`). Chosen over a local cross-encoder because the backend container is capped at 512M; rerank compute is offloaded like embeddings.
-3. Auth: self-hosted. Postgres + FastAPI-Users (JWT, roles, admin password reset, domain-restricted signup).
-4. Database: PostgreSQL — users, roles, sessions, messages, summaries, trainer-KB entries, editable system prompt.
-5. Cross-session memory: lightweight (per-session summary + rolling user-profile summary).
-6. System prompt: moves out of `app/rag/chat.py` into DB config, loaded at runtime, admin-editable.
-7. Citations: ingestion becomes section-aware (document, section/clause heading, page).
+1. KB handling (req 12): RELIABILITY STACK (revised 2026-06-17). This SUPERSEDES both the earlier "full KB in context" idea and the first reranker+keyword-scope build. The keyword `detect_scope` (AIIMS/incident-control) and emergency-specific prompt lines were a Bug1-specific hack and are being removed. The reliability stack treats scope as a representation problem solved at ingestion (Anthropic Contextual Retrieval), not a ranking trick, and adds grounded/verified generation, calibrated abstention, and an eval harness. See blueprint.md for the full spec.
+2. Reranker vendor: Cohere Rerank (env-configurable `COHERE_API_KEY`). Offloads compute (backend container capped at 512M).
+3. Auth: self-hosted. Postgres + FastAPI-Users (JWT, roles, admin password reset, domain-restricted signup). [Built]
+4. Database: PostgreSQL — users, roles, sessions, messages, summaries, trainer-KB entries, editable system prompt. [Built]
+5. Cross-session memory: lightweight (per-session summary + rolling user-profile summary). [Built]
+6. System prompt: in DB config, loaded at runtime, admin-editable. [Built]
+7. Citations: span-grounded (verbatim span + clause number), validated against the structured clause model.
 
-### Bug1 residual risk + mitigation
-A reranker only re-orders what was retrieved; Bug1 returns if the governing clause (e.g. 23.3) is never retrieved. Mitigations: generous top-k before rerank, section-aware chunking so a hit pulls its whole clause, scope tags so emergency-only chunks are filtered out of general questions, a confidence gate that clarifies instead of guessing, and a seeded regression eval (the meal-break / clause-23.3 case) so this exact failure cannot silently return.
+### Reliability stack (req 1, 2, 12) — the real fix, replacing the keyword hack
+Why the first build was wrong: it ranked + tagged for the known emergency case. Scope (a clause applying only under a condition, e.g. emergency / casual / probation) is set by a chunk's place in the document heading hierarchy, which naive chunking severs. The fix makes every chunk carry its own structural context, generically.
 
-### Build order (commit/push at each checkpoint)
-1. Retrieval rebuild (section-aware ingestion + scope tags + dense top-k + Cohere rerank + confidence gate + citations). Fixes Bug1. **[Done, d513066 — needs COHERE_API_KEY + re-ingest to verify]**
-2. Regression eval seeded with the clause-23.3 case. **[Done — `python -m app.regression`]**
+A. Knowledge representation
+1. Structure-aware parsing: split by real structure (EA clause numbers like 23, 23.1, Appendix C; DOCX heading styles); strip page noise (OFFICIAL, running headers); record clause number, title, parent path, page.
+2. Contextual chunking (keystone, Anthropic Contextual Retrieval): prepend each chunk with a deterministic breadcrumb + a 50-100 token LLM situating-context stating its scope, before embedding and BM25.
+3. Structured clause model for the EA: clauses extracted to a table (number, title, scope, parent, cross-references) so applicability is queryable data, not inferred.
+
+B. Retrieval
+4. Hybrid dense + BM25 (BM25 catches exact refs like "23.3").
+5. Cohere cross-encoder rerank to top-k.
+6. Expansion: include the full governing clause + cross-referenced clauses so interactions are visible.
+
+C. Grounded generation
+7. Generic scope/precedence prompt (NO hardcoded keywords): obey conditions stated in a passage; conditional clauses govern only if their condition is met; apply precedence (NES-overrides per EA clause 4.3; specific-over-general).
+8. Span-grounded citations: every claim anchored to a verbatim span + clause number.
+9. Verifier pass: cheap second call checks each claim is supported, the cited clause exists/in-scope, no interacting clause ignored; fail -> regenerate once, else abstain.
+10. Calibrated abstention: rerank confidence + verifier verdict -> answer / clarify / route to People & Culture. Never guess. Verifier runs in parallel with streaming so latency stays low.
+
+D. Measurement and feedback
+11. Eval harness (first-class): adversarial cases across scope, clause-interaction, scenario/computation (the 0-vs-30 case), out-of-scope (must abstain), citation-correctness; pass-rate per category; runs as a regression gate.
+12. Observability + loop: log retrieved clauses, scores, verifier verdicts; flagged answers feed the eval set.
+13. Trainer-content guard: trainer KB is scoped and still subject to grounding/verification; it cannot silently override authoritative clauses.
+
+Honest residual: target is calibration (right when confident, abstain when not), not perfection; gold eval answers need human (People & Culture) validation; embedding model is a tunable the eval will surface.
+
+### Reliability-stack build order (supersedes the steps below; commit/push at natural points)
+R1. Structure-aware parsing (EA clause numbers + DOCX headings, strip page noise).
+R2. Contextual chunking (breadcrumb + LLM situating-context) before embedding/BM25.
+R3. Structured clause model for the EA.
+R4. Hybrid retrieval (dense + BM25) + Cohere rerank + governing/cross-ref expansion.
+R5. Grounded generation: generic scope/precedence prompt, span citations, verifier pass, calibrated abstention (verifier parallel to streaming).
+R6. Remove the AIIMS keyword detect_scope + emergency-specific prompt lines.
+R7. Eval harness (per-category pass rates, regression gate) + observability.
+
+### Original M1 build order (superseded for retrieval; auth/sessions/admin parts still stand)
+1. Retrieval rebuild (section-aware ingestion + scope tags + dense top-k + Cohere rerank + confidence gate + citations). **[Superseded by the reliability stack — was the keyword-hack build]**
+2. Regression eval seeded with the clause-23.3 case. **[Folded into the eval harness R7]**
 3. Postgres + FastAPI-Users auth, roles, domain-restricted signup, admin reset (cookie JWT, env-seeded admin). **[Done, 7954a80]**
 4. Persisted sessions/messages + lightweight cross-session memory. **[Done, 06f2730]**
 5. System prompt in DB config, runtime-loaded. **[Done, b6414c2]**

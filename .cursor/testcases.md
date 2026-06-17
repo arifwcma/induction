@@ -102,7 +102,22 @@ Expected: the user's messages are shown.
 ### C1. Bug1 — meal break vs emergency appendix (THE headline case)
 Purpose: req 12; prove the lexical-match bug is gone.
 Steps: ask "I work 8 hours and take a 30 minute lunch from 12:00 to 12:30. Does that lunch count as time worked?"
-Expected: the answer is governed by the general break rule (enterprise agreement clause ~23.3, "no more than 5 consecutive hours without a break") and is cited as such. It must NOT base the answer on the emergency/AIIMS incident-control appendix. Run `python -m app.regression` for the automated version.
+Expected: the answer is governed by clause 23 (Rest Breaks / Meal Breaks) and cited as such, NOT Appendix C / Emergency Response. Part of the eval harness (category: scope), not a one-off.
+
+### C1b. Scope generalisation (beyond emergency)
+Purpose: prove the fix is general, not Bug1-specific.
+Steps: ask a question whose answer differs for a conditional category (e.g. a casual-only or probation-only clause) while phrasing it as an ordinary employee.
+Expected: the bot applies the general clause, not the conditional one, and states the condition if it ever relies on a conditional clause. Covered by the eval harness "clause-interaction"/"scope" categories.
+
+### C1c. Verifier catches an unsupported claim / bad citation
+Purpose: grounded-generation + verifier pass.
+Steps: in the eval harness, include a case where the tempting answer cites a non-existent or out-of-scope clause.
+Expected: the verifier fails it; the system regenerates or abstains; no fabricated clause number is shown.
+
+### C1d. Citation validity
+Purpose: span-grounded citations are real.
+Steps: for answered cases, check the cited clause number exists in the structured clause model and the quoted span is verbatim.
+Expected: 100% of shown citations resolve to a real clause/span.
 
 ### C2. Confidence gate — out-of-scope question
 Purpose: req 2 (no guessing).
