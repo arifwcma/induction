@@ -1,0 +1,96 @@
+services:
+  induction:
+    build:
+      context: ./app-src
+      dockerfile: Dockerfile
+    container_name: induction
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      QDRANT_URL: http://induction-qdrant:6333
+      DATABASE_URL: postgresql+asyncpg://induction:${POSTGRES_PASSWORD}@induction-postgres:5432/induction
+    env_file: .env
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - induction_kb_index:/app/kb_index
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    depends_on:
+      - induction-qdrant
+      - induction-postgres
+    networks:
+      - internal-apps
+
+  induction-frontend:
+    build:
+      context: ./app-src/frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://induction.wcma.work
+    container_name: induction-frontend
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+      - internal-apps
+
+  induction-qdrant:
+    image: qdrant/qdrant:v1.12.5
+    container_name: induction-qdrant
+    restart: unless-stopped
+    volumes:
+      - induction_qdrant_storage:/qdrant/storage
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - internal-apps
+
+  induction-postgres:
+    image: postgres:16
+    container_name: induction-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: induction
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: induction
+    volumes:
+      - induction_postgres_storage:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - internal-apps
+
+volumes:
+  induction_qdrant_storage:
+  induction_postgres_storage:
+  induction_kb_index:
+
+networks:
+  internal-apps:
+    external: true

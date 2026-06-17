@@ -32,7 +32,8 @@ def clear_vector_collection():
         client.delete_collection(settings.qdrant_collection)
 
 
-async def store_clause_records(clause_records: list[dict]):
+async def persist_clause_records(clause_records: list[dict]):
+    await create_db_and_tables()
     async with async_session_maker() as db:
         await db.execute(delete(Clause))
         for record in clause_records:
@@ -68,8 +69,7 @@ def ingest_knowledge_base():
     VectorStoreIndex.from_documents(documents_for_embedding, storage_context=storage_context)
 
     save_corpus(bm25_records)
-    asyncio.run(create_db_and_tables())
-    asyncio.run(store_clause_records(clause_records))
+    asyncio.run(persist_clause_records(clause_records))
 
     print(
         f"Ingested {len(documents_for_embedding)} contextual chunks, "

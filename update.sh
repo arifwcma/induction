@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-before_pull=$(git rev-parse HEAD)
+# Light update for small backend/frontend code changes. Run from app-src/.
+# Pulls, syncs the compose file from the repo, rebuilds and restarts containers.
+# Does NOT re-ingest (no LLM cost). Use hard_update.sh when documents or KB
+# logic changed and the knowledge base must be rebuilt.
+
+here="$(cd "$(dirname "$0")" && pwd)"
+appdir="$(cd "$here/.." && pwd)"
+
 git pull
-after_pull=$(git rev-parse HEAD)
 
-documents_changed=false
-if ! git diff --quiet "$before_pull" "$after_pull" -- documents; then
-  documents_changed=true
-fi
+cp "$here/deploy/compose.server.yaml" "$appdir/compose.yaml"
 
-cd ..
+cd "$appdir"
 docker compose up -d --build
 
-if [ "$documents_changed" = true ]; then
-  echo "Documents changed — re-ingesting."
-  docker compose exec -T induction python -m app.ingest
-else
-  echo "No document changes — skipping re-ingest."
-fi
-
-echo "Update complete."
+echo "Update complete (code + containers restarted, knowledge base untouched)."
