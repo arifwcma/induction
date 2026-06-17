@@ -75,6 +75,8 @@ def condense_to_standalone_question(llm: OpenAI, history: list[ChatMessage], mes
 
 def citation_label(metadata: dict) -> str:
     source = metadata.get("source", "unknown document")
+    if metadata.get("origin") == "trainer":
+        return f"{source} (trainer-provided)"
     if metadata.get("page") is not None:
         location = f"p.{metadata['page']}"
     elif metadata.get("section"):

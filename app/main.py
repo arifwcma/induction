@@ -1,13 +1,16 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
-from app.auth import auth_backend, current_active_user, current_admin, fastapi_users
+from app.auth import auth_backend, current_active_user, current_admin, current_trainer, fastapi_users
+from app.kb_store import create_kb_entry
+from app.models import KB_KIND_DOCUMENT, KB_KIND_MESSAGE
+from app.trainer_kb import add_text_to_knowledge_base, extract_text_from_upload
 from app.chat_store import (
     build_cross_session_context,
     get_or_create_session,
@@ -156,6 +159,69 @@ async def write_prompt(update: PromptUpdate, admin: User = Depends(current_admin
     async with async_session_maker() as db:
         await update_system_prompt(db, update.prompt)
         return {"prompt": await get_system_prompt(db, DEFAULT_SYSTEM_PROMPT)}
+
+
+def trainer_display_name(trainer: User) -> str:
+    return trainer.full_name.strip() or trainer.email
+
+
+class KBTextRequest(BaseModel):
+    content: str
+
+
+@app.post("/kb/text")
+async def add_message_to_kb(request: KBTextRequest, trainer: User = Depends(current_trainer)):
+    content = request.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Cannot add empty text to the knowledge base.")
+
+    trainer_name = trainer_display_name(trainer)
+    source_label = f"Trainer note by {trainer_name}"
+
+    async with async_session_maker() as db:
+        entry = await create_kb_entry(
+            db, trainer.id, trainer_name, KB_KIND_MESSAGE, source_label, content
+        )
+
+    await run_in_threadpool(
+        add_text_to_knowledge_base, content, source_label, trainer_name, str(entry.id)
+    )
+    return {"id": str(entry.id), "source_label": source_label}
+
+
+@app.post("/kb/document")
+async def add_document_to_kb(
+    file: UploadFile = File(...), trainer: User = Depends(current_trainer)
+):
+    raw_bytes = await file.read()
+    try:
+        extracted_text = await run_in_threadpool(
+            extract_text_from_upload, file.filename, raw_bytes
+        )
+    except ValueError as unsupported_file:
+        raise HTTPException(status_code=400, detail=str(unsupported_file))
+
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="No readable text found in the uploaded file.")
+
+    trainer_name = trainer_display_name(trainer)
+    source_label = file.filename
+
+    async with async_session_maker() as db:
+        entry = await create_kb_entry(
+            db,
+            trainer.id,
+            trainer_name,
+            KB_KIND_DOCUMENT,
+            source_label,
+            extracted_text,
+            filename=file.filename,
+        )
+
+    await run_in_threadpool(
+        add_text_to_knowledge_base, extracted_text, source_label, trainer_name, str(entry.id)
+    )
+    return {"id": str(entry.id), "filename": file.filename}
 
 
 if __name__ == "__main__":
