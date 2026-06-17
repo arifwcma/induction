@@ -9,10 +9,19 @@ You are taking over the induction chatbot. Read `.cursor/instructions.md` (how A
 ## What this project is
 A fast, concise, ChatGPT-like chatbot for NEW Wimmera CMA employees. It answers strictly from the induction documents in `documents/` (PDF + DOCX: policies, procedures, the enterprise agreement). Keeps session memory, opens with a greeting, gives a bite-sized "tour" on request, and asks one clarifying question when a query is vague instead of guessing. It is a clone of the RCS bot (`C:\Users\m.rahman\src\rcsbot`) with a different context, a different Qdrant collection, and a separate deployment. Uses the SAME OpenAI API key as the RCS bot.
 
-## Current status (LIVE, but on the OLD architecture)
-- Cloned from rcsbot, rebranded, deployed and verified live at https://induction.wcma.work/.
-- Current architecture = chunk RAG: PyMuPDF/python-docx ingestion → Qdrant (`induction_documents`) → top-k=8 chunk retrieval → `gpt-4o-mini` via LlamaIndex `condense_plus_context`. THIS IS WHAT YOU WILL REPLACE (see NEXT BUILD TASK).
-- Greeting + tour/clarify behaviour already implemented (frontend `initialMessages`, backend `SYSTEM_PROMPT`).
+## Current status — M1 BUILT (backend + frontend) in git; NOT yet runtime-verified or deployed
+- The Milestone 1 rebuild is implemented and pushed to `main`. See `.cursor/plan.md` for the full M1 scope, decisions, and per-checkpoint commits.
+- IMPORTANT: the M1 KB-handling decision is the RERANKER PIPELINE (Cohere rerank + confidence gate), which OVERRIDES the old "full KB in context + prompt caching" plan described later in this file. Treat the reranker pipeline as current; the NEXT BUILD TASK section below is historical.
+- Backend is import-validated only (no Cohere key / Postgres on the dev machine). Frontend passes typecheck + `next build` + oxlint, but has not been run in a browser against a live backend.
+- The previously-live site still runs the OLD chunk-RAG architecture until this M1 build is deployed.
+
+## M1 deployment & ops (do this to ship M1)
+New dependencies vs old: PostgreSQL (users/sessions/prompt/trainer-KB), Cohere Rerank API, FastAPI-Users auth.
+Required env (server `.env`, gitignored): `OPENAI_API_KEY`, `COHERE_API_KEY`, `JWT_SECRET` (long random), `DATABASE_URL` (postgresql+asyncpg://...), `COOKIE_SECURE=true` (HTTPS), `ALLOWED_EMAIL_DOMAIN=wcma.vic.gov.au`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `FRONTEND_ORIGIN=https://induction.wcma.work`.
+Server `compose.yaml` must gain a `postgres` service (image `postgres:16`, a named volume, the induction DB/user/password) and the `induction` backend must depend on it with `DATABASE_URL` pointing at it (see local `docker-compose.yml` for the shape). Keep `internal-apps` network + nginx SSL conventions.
+Deploy steps after pushing: `git pull` + `docker compose up -d --build`, then ONE-OFF: `docker compose exec -T induction python -m app.seed_admin` (creates the admin) and `docker compose exec -T induction python -m app.ingest` (REQUIRED this deploy — ingestion logic changed to section-aware + scope tags; existing vectors are stale).
+nginx: it currently only routes `/chat` to the backend. M1 adds `/auth/*`, `/users/*`, `/sessions/*`, `/kb/*`, `/admin/*` — nginx must route ALL backend API paths to the `induction` backend (not just `/chat`), or scope them under a prefix. Confirm routing before declaring done.
+Cookies: auth uses an httpOnly cookie; frontend and backend are same registrable domain (induction.wcma.work) so `SameSite=Lax` works; ensure `COOKIE_SECURE=true` in prod.
 
 ## Why we are changing it (the problem Arif found)
 The chunk RAG gave a WRONG answer on a real query. Asked whether a 12:00–12:30 lunch counts as work time, the bot said "counts as time worked, enter 8 hours" — but it pulled that from the conditional **Emergency-work appendix (only applies under AIIMS incident control)** and MISSED the governing general clause **23.3** ("an employee may not work more than 5 consecutive hours without a break"). Root cause: top-k chunk retrieval is structurally blind to the rest of the document — it reasons from 8 fragments, loses each clause's scope/conditions, and never sees the controlling clause. Prompt wording cannot fix a retrieval-layer blind spot.

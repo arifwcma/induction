@@ -51,11 +51,11 @@ A reranker only re-orders what was retrieved; Bug1 returns if the governing clau
 5. System prompt in DB config, runtime-loaded. **[Done, b6414c2]**
 6. Trainer KB: "Add to KB" + document upload, with provenance. **[Done, a86b237]**
 7. Admin panel APIs. **[Done, bfe3240]**
-8. Frontend: auth UI, persisted thread list, citations display, Add-to-KB button, admin panel. **[Next — see note]**
-9. docker-compose: local Postgres added (commit 7954a80). Server `compose.yaml` still needs a Postgres service + new env (DATABASE_URL, JWT_SECRET, COHERE_API_KEY, ADMIN_EMAIL/PASSWORD) at deploy. Prod-hardening pending. **[Partial]**
+8. Frontend: auth UI, persisted thread list, citations (cited inline in answers), Add-to-KB button, admin panel. **[Done, b008679 — typecheck + next build + oxlint pass; not browser-tested against a live backend]**
+9. docker-compose: local Postgres added (7954a80). Server `compose.yaml` Postgres service + new env + nginx routing + prod-hardening documented in handover.md. **[Local done; server steps documented for the EC2 deploy agent]**
 
-### M1 backend status: COMPLETE (steps 1-7), all pushed. Frontend (step 8) deliberately not started yet.
-The whole backend is import-validated only; none of it has been run against a live Postgres + Cohere because this machine has no Cohere key and Docker is not running. The frontend integrates tightly against these live endpoints (cookie auth, /sessions, citations, /kb, /admin) and the assistant-ui thread model, and cannot be built reliably without a running backend and a browser to test in. Recommended next step: Arif validates the backend (Cohere key + Postgres + seed admin + register/login), then the frontend is built against the verified live backend.
+### M1 status: ALL CHECKPOINTS BUILT AND PUSHED.
+Backend is import-validated only (no Cohere key / Postgres on the dev machine). Frontend passes typecheck + `next build` + oxlint but is not browser-tested against a live backend. Nothing is deployed yet. Next: Arif validates against a real Postgres + Cohere (see backend validation steps below), then deploy per handover.md "M1 deployment & ops".
 
 ### New backend endpoints (for the frontend to consume)
 - Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.
