@@ -44,15 +44,25 @@ Reliability over cost. The bot must never guess or hallucinate; when unsure it s
 A reranker only re-orders what was retrieved; Bug1 returns if the governing clause (e.g. 23.3) is never retrieved. Mitigations: generous top-k before rerank, section-aware chunking so a hit pulls its whole clause, scope tags so emergency-only chunks are filtered out of general questions, a confidence gate that clarifies instead of guessing, and a seeded regression eval (the meal-break / clause-23.3 case) so this exact failure cannot silently return.
 
 ### Build order (commit/push at each checkpoint)
-1. Retrieval rebuild (section-aware ingestion + scope tags + dense top-k + Cohere rerank + confidence gate + citations). Fixes Bug1. **[Done, commit d513066 — needs COHERE_API_KEY + re-ingest to verify]**
+1. Retrieval rebuild (section-aware ingestion + scope tags + dense top-k + Cohere rerank + confidence gate + citations). Fixes Bug1. **[Done, d513066 — needs COHERE_API_KEY + re-ingest to verify]**
 2. Regression eval seeded with the clause-23.3 case. **[Done — `python -m app.regression`]**
-3. Postgres + FastAPI-Users auth, roles, domain-restricted signup, admin reset (cookie JWT, env-seeded admin). **[Done, commit 7954a80 — needs JWT_SECRET + running Postgres to verify]**
-4. Persisted sessions/messages + lightweight cross-session memory. **[Next]**
-5. System prompt in DB config, runtime-loaded.
-6. Trainer KB: "Add to KB" + document upload, with provenance.
-7. Admin panel APIs.
-8. Frontend: auth UI, persisted thread list, citations display, Add-to-KB button, admin panel.
-9. docker-compose: add Postgres, env.example, prod-hardening. (Postgres service added with step 3.)
+3. Postgres + FastAPI-Users auth, roles, domain-restricted signup, admin reset (cookie JWT, env-seeded admin). **[Done, 7954a80]**
+4. Persisted sessions/messages + lightweight cross-session memory. **[Done, 06f2730]**
+5. System prompt in DB config, runtime-loaded. **[Done, b6414c2]**
+6. Trainer KB: "Add to KB" + document upload, with provenance. **[Done, a86b237]**
+7. Admin panel APIs. **[Done, bfe3240]**
+8. Frontend: auth UI, persisted thread list, citations display, Add-to-KB button, admin panel. **[Next — see note]**
+9. docker-compose: local Postgres added (commit 7954a80). Server `compose.yaml` still needs a Postgres service + new env (DATABASE_URL, JWT_SECRET, COHERE_API_KEY, ADMIN_EMAIL/PASSWORD) at deploy. Prod-hardening pending. **[Partial]**
+
+### M1 backend status: COMPLETE (steps 1-7), all pushed. Frontend (step 8) deliberately not started yet.
+The whole backend is import-validated only; none of it has been run against a live Postgres + Cohere because this machine has no Cohere key and Docker is not running. The frontend integrates tightly against these live endpoints (cookie auth, /sessions, citations, /kb, /admin) and the assistant-ui thread model, and cannot be built reliably without a running backend and a browser to test in. Recommended next step: Arif validates the backend (Cohere key + Postgres + seed admin + register/login), then the frontend is built against the verified live backend.
+
+### New backend endpoints (for the frontend to consume)
+- Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.
+- Chat (login required): `POST /chat` (stream); `GET /sessions`; `GET /sessions/{id}/messages`.
+- Trainer: `POST /kb/text`, `POST /kb/document`.
+- Admin: `GET /admin/prompt`, `PUT /admin/prompt`, `GET /admin/users`, `POST /admin/users/{id}/role`, `POST /admin/users/{id}/reset-password`, `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sessions/{sid}/messages`, `GET /admin/kb`, `DELETE /admin/kb/{id}`.
+- All browser calls must send `credentials: "include"` (httpOnly cookie auth).
 
 ### Decisions made when Arif skipped the auth questions (defaults applied)
 1. Login required to chat.
