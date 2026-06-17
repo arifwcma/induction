@@ -1,55 +1,132 @@
-from llama_index.core import VectorStoreIndex
+from llama_index.core.llms import ChatMessage, MessageRole
+from llama_index.llms.openai import OpenAI
 
-from app.rag.engine import configure_models, get_vector_store
+from app.config import get_settings
+from app.rag.retrieval import retrieve_relevant_passages, top_passage_is_confident
 
 
 SYSTEM_PROMPT = (
     "You are the induction assistant for new employees at the Wimmera Catchment Management "
     "Authority (Wimmera CMA). You help them settle in by answering questions about "
     "organisational policies, procedures, the enterprise agreement, and related induction "
-    "material. Answer only from the provided documents; never invent facts.\n\n"
+    "material. Answer only from the provided source passages; never invent facts.\n\n"
     "How you communicate:\n"
     "- Be concise and to the point. Never pad an answer with detail the person did not ask for.\n"
-    "- Reason over the material and explain it in plain language. Do not recite or quote long "
-    "passages verbatim.\n"
+    "- Reason over the material and explain it in plain language. Do not recite long passages verbatim.\n"
     "- Use the conversation so far as context. Do not re-ask what the person has already told you.\n\n"
+    "Choosing the governing rule (this is critical):\n"
+    "- When several passages touch the question, decide which one actually GOVERNS the asked "
+    "situation. A general clause governs unless a conditional or appendix clause's stated "
+    "condition genuinely applies.\n"
+    "- A passage marked as conditional (for example emergency / AIIMS incident control only) "
+    "must NOT be used for an ordinary, non-emergency question. State the condition explicitly "
+    "if you ever rely on such a passage.\n\n"
+    "Citing sources:\n"
+    "- For every substantive claim, cite the source passage it came from using its label "
+    "(document name plus clause/section or page).\n"
+    "- If a passage came from trainer-added knowledge, say that the information was provided by a trainer.\n\n"
     "When intent is unclear:\n"
-    "- If a question is vague, ambiguous, or not confidently covered by the documents, ask one "
-    "focused clarifying question to qualify what they mean, then answer precisely.\n"
-    "- A bare topic with no specific question (for example just 'leave', 'pay', or 'uniform') "
-    "is not specific enough. Ask which aspect they mean before answering, rather than dumping "
-    "everything the documents say about that topic.\n"
-    "- Do not guess, do not deflect with a generic non-answer, and do not enumerate every "
-    "possible interpretation as a numbered list in an if-this/else-that form. Qualify intent "
-    "first, then respond precisely.\n\n"
-    "If the person asks for a tour or a general overview:\n"
-    "- Walk them through the policies in small, bite-sized steps, one topic at a time in a few "
-    "short sentences. Never dump a long wall of text in a single reply.\n"
-    "- End each step by inviting them to ask about something specific, or by suggesting one "
-    "relevant subtopic you just introduced that they might want to explore next.\n\n"
-    "For personal HR situations, point the new employee to their manager or People & Culture "
-    "rather than improvising."
+    "- If a question is vague or ambiguous, ask one focused clarifying question to qualify what "
+    "they mean, then answer precisely.\n"
+    "- A bare topic with no specific question (for example just 'leave', 'pay', or 'uniform') is "
+    "not specific enough. Ask which aspect they mean before answering.\n"
+    "- Do not guess, do not deflect with a generic non-answer, and do not enumerate every possible "
+    "interpretation in an if-this/else-that list.\n\n"
+    "If a tour or general overview is requested:\n"
+    "- Walk through the policies in small, bite-sized steps, one topic at a time in a few short "
+    "sentences. Never dump a wall of text. End each step by inviting a specific follow-up.\n\n"
+    "If the answer is not in the source passages, say so plainly and point the new employee to "
+    "their manager or People & Culture. Do not extrapolate beyond the documents."
 )
 
-RETRIEVED_CHUNKS = 8
+CONDENSE_INSTRUCTION = (
+    "Given the conversation so far and a follow-up message, rewrite the follow-up as a single "
+    "standalone question that can be understood without the conversation. Keep the original "
+    "wording where possible. Return only the rewritten question.\n\n"
+    "Conversation so far:\n{transcript}\n\nFollow-up message: {message}\n\nStandalone question:"
+)
+
+UNSURE_RESPONSE = (
+    "I could not find this clearly in the induction documents, so I do not want to guess. "
+    "Could you rephrase or tell me which policy or situation you mean? For anything personal "
+    "or not covered by the documents, your manager or People & Culture is the right place to ask."
+)
 
 
-_index = None
+def build_llm() -> OpenAI:
+    settings = get_settings()
+    return OpenAI(model=settings.openai_chat_model, api_key=settings.openai_api_key)
 
 
-def get_index() -> VectorStoreIndex:
-    global _index
-    if _index is None:
-        configure_models()
-        _index = VectorStoreIndex.from_vector_store(get_vector_store())
-    return _index
+def format_transcript(history: list[ChatMessage]) -> str:
+    lines = []
+    for message in history:
+        speaker = "Employee" if message.role == MessageRole.USER else "Assistant"
+        lines.append(f"{speaker}: {message.content}")
+    return "\n".join(lines)
 
 
-def build_chat_engine(memory):
-    index = get_index()
-    return index.as_chat_engine(
-        chat_mode="condense_plus_context",
-        memory=memory,
-        system_prompt=SYSTEM_PROMPT,
-        similarity_top_k=RETRIEVED_CHUNKS,
-    )
+def condense_to_standalone_question(llm: OpenAI, history: list[ChatMessage], message: str) -> str:
+    if not history:
+        return message
+    prompt = CONDENSE_INSTRUCTION.format(transcript=format_transcript(history), message=message)
+    return llm.complete(prompt).text.strip()
+
+
+def citation_label(metadata: dict) -> str:
+    source = metadata.get("source", "unknown document")
+    if metadata.get("page") is not None:
+        location = f"p.{metadata['page']}"
+    elif metadata.get("section"):
+        location = f"section: {metadata['section']}"
+    else:
+        location = ""
+
+    label = source if not location else f"{source}, {location}"
+    if metadata.get("scope") == "emergency-only":
+        label += " (conditional: emergency / AIIMS incident control only)"
+    return label
+
+
+def format_passages_as_context(passages) -> str:
+    blocks = []
+    for passage in passages:
+        label = citation_label(passage.node.metadata)
+        blocks.append(f"[Source: {label}]\n{passage.node.get_content()}")
+    return "\n\n".join(blocks)
+
+
+def stream_in_pieces(text: str):
+    for word in text.split(" "):
+        yield word + " "
+
+
+def answer_stream(memory, message: str):
+    llm = build_llm()
+    history = memory.get()
+    standalone_question = condense_to_standalone_question(llm, history, message)
+    passages = retrieve_relevant_passages(standalone_question)
+
+    if not top_passage_is_confident(passages):
+        for piece in stream_in_pieces(UNSURE_RESPONSE):
+            yield piece
+        memory.put(ChatMessage(role=MessageRole.USER, content=message))
+        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=UNSURE_RESPONSE))
+        return
+
+    context_block = format_passages_as_context(passages)
+    messages = [
+        ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
+        ChatMessage(role=MessageRole.SYSTEM, content=f"Source passages:\n\n{context_block}"),
+        *history,
+        ChatMessage(role=MessageRole.USER, content=message),
+    ]
+
+    collected_answer = ""
+    for chunk in llm.stream_chat(messages):
+        delta = chunk.delta or ""
+        collected_answer += delta
+        yield delta
+
+    memory.put(ChatMessage(role=MessageRole.USER, content=message))
+    memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=collected_answer))

@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.config import get_settings
-from app.rag.chat import build_chat_engine
+from app.rag.chat import answer_stream
 from app.sessions import get_memory
 
 
@@ -37,14 +37,10 @@ def health():
 @app.post("/chat")
 def chat(request: ChatRequest):
     memory = get_memory(request.session_id)
-    chat_engine = build_chat_engine(memory)
-    streaming_response = chat_engine.stream_chat(request.message)
-
-    def token_stream():
-        for token in streaming_response.response_gen:
-            yield token
-
-    return StreamingResponse(token_stream(), media_type="text/plain")
+    return StreamingResponse(
+        answer_stream(memory, request.message),
+        media_type="text/plain",
+    )
 
 
 if __name__ == "__main__":

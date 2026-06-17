@@ -1,6 +1,8 @@
 import sys
 
-from app.rag.query import build_query_engine
+from llama_index.core.memory import ChatMemoryBuffer
+
+from app.rag.chat import answer_stream
 
 
 def ask_cli():
@@ -9,9 +11,10 @@ def ask_cli():
         print('Usage: python -m app.ask "your question"')
         return
 
-    query_engine = build_query_engine()
-    response = query_engine.query(question)
-    print(response)
+    memory = ChatMemoryBuffer.from_defaults()
+    for piece in answer_stream(memory, question):
+        print(piece, end="", flush=True)
+    print()
 
 
 if __name__ == "__main__":

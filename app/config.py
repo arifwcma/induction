@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
 
+    cohere_api_key: str = ""
+    cohere_rerank_model: str = "rerank-english-v3.0"
+
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "induction_documents"
 
