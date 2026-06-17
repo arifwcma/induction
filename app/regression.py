@@ -1,5 +1,3 @@
-from llama_index.core.memory import ChatMemoryBuffer
-
 from app.rag.chat import answer_stream
 
 
@@ -17,8 +15,7 @@ CASES = [
 
 
 def collect_answer(question: str) -> str:
-    memory = ChatMemoryBuffer.from_defaults()
-    return "".join(answer_stream(memory, question))
+    return "".join(answer_stream([], "", question))
 
 
 def evaluate_case(case: dict) -> bool:

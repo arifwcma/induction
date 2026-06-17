@@ -1,17 +1,28 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from app.auth import auth_backend, current_active_user, fastapi_users
+from app.chat_store import (
+    build_cross_session_context,
+    get_or_create_session,
+    get_owned_session,
+    list_user_sessions,
+    load_history,
+    persist_turn,
+    session_message_payload,
+    set_session_summary,
+)
 from app.config import get_settings
-from app.db import create_db_and_tables
+from app.db import async_session_maker, create_db_and_tables
 from app.models import User
-from app.rag.chat import answer_stream
+from app.rag.chat import answer_stream, summarise_conversation
 from app.schemas import UserCreate, UserRead, UserUpdate
-from app.sessions import get_memory
 
 
 settings = get_settings()
@@ -71,12 +82,57 @@ def health():
 
 
 @app.post("/chat")
-def chat(request: ChatRequest, user: User = Depends(current_active_user)):
-    memory = get_memory(request.session_id)
-    return StreamingResponse(
-        answer_stream(memory, request.message),
-        media_type="text/plain",
-    )
+async def chat(request: ChatRequest, user: User = Depends(current_active_user)):
+    async def stream_and_persist():
+        async with async_session_maker() as db:
+            chat_session = await get_or_create_session(
+                db, user.id, request.session_id, request.message
+            )
+            history = await load_history(db, chat_session.id)
+            cross_session_context = await build_cross_session_context(
+                db, user.id, chat_session.id
+            )
+
+            answer_pieces = []
+            stream = answer_stream(history, cross_session_context, request.message)
+            async for delta in iterate_in_threadpool(stream):
+                answer_pieces.append(delta)
+                yield delta
+
+            answer_text = "".join(answer_pieces)
+            await persist_turn(db, chat_session.id, request.message, answer_text)
+
+            updated_history = history + [
+                ChatMessage(role=MessageRole.USER, content=request.message),
+                ChatMessage(role=MessageRole.ASSISTANT, content=answer_text),
+            ]
+            new_summary = await run_in_threadpool(summarise_conversation, updated_history)
+            await set_session_summary(db, chat_session.id, new_summary)
+
+    return StreamingResponse(stream_and_persist(), media_type="text/plain")
+
+
+@app.get("/sessions")
+async def get_sessions(user: User = Depends(current_active_user)):
+    async with async_session_maker() as db:
+        sessions = await list_user_sessions(db, user.id)
+        return [
+            {
+                "session_id": session.client_key,
+                "title": session.title,
+                "updated_at": session.updated_at,
+            }
+            for session in sessions
+        ]
+
+
+@app.get("/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str, user: User = Depends(current_active_user)):
+    async with async_session_maker() as db:
+        chat_session = await get_owned_session(db, user.id, session_id)
+        if chat_session is None:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        return await session_message_payload(db, chat_session.id)
 
 
 if __name__ == "__main__":

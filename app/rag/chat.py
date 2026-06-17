@@ -101,32 +101,54 @@ def stream_in_pieces(text: str):
         yield word + " "
 
 
-def answer_stream(memory, message: str):
+def build_message_sequence(history, cross_session_context, context_block, message):
+    messages = [ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT)]
+    if cross_session_context:
+        messages.append(
+            ChatMessage(
+                role=MessageRole.SYSTEM,
+                content=(
+                    "Context from this employee's earlier sessions (use only if relevant; "
+                    "never let it override the source passages below):\n"
+                    f"{cross_session_context}"
+                ),
+            )
+        )
+    messages.append(
+        ChatMessage(role=MessageRole.SYSTEM, content=f"Source passages:\n\n{context_block}")
+    )
+    messages.extend(history)
+    messages.append(ChatMessage(role=MessageRole.USER, content=message))
+    return messages
+
+
+def answer_stream(history: list[ChatMessage], cross_session_context: str, message: str):
     llm = build_llm()
-    history = memory.get()
     standalone_question = condense_to_standalone_question(llm, history, message)
     passages = retrieve_relevant_passages(standalone_question)
 
     if not top_passage_is_confident(passages):
         for piece in stream_in_pieces(UNSURE_RESPONSE):
             yield piece
-        memory.put(ChatMessage(role=MessageRole.USER, content=message))
-        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=UNSURE_RESPONSE))
         return
 
     context_block = format_passages_as_context(passages)
-    messages = [
-        ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT),
-        ChatMessage(role=MessageRole.SYSTEM, content=f"Source passages:\n\n{context_block}"),
-        *history,
-        ChatMessage(role=MessageRole.USER, content=message),
-    ]
+    messages = build_message_sequence(history, cross_session_context, context_block, message)
 
-    collected_answer = ""
     for chunk in llm.stream_chat(messages):
-        delta = chunk.delta or ""
-        collected_answer += delta
-        yield delta
+        yield chunk.delta or ""
 
-    memory.put(ChatMessage(role=MessageRole.USER, content=message))
-    memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=collected_answer))
+
+SUMMARISE_INSTRUCTION = (
+    "Summarise the following conversation in two or three sentences. Capture what the employee "
+    "asked about and any preferences or personal context they shared. Do not add anything that "
+    "was not said.\n\nConversation:\n{transcript}\n\nSummary:"
+)
+
+
+def summarise_conversation(history: list[ChatMessage]) -> str:
+    if not history:
+        return ""
+    llm = build_llm()
+    prompt = SUMMARISE_INSTRUCTION.format(transcript=format_transcript(history))
+    return llm.complete(prompt).text.strip()
