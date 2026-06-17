@@ -1,6 +1,6 @@
 import sys
 
-from app.rag.chat import answer_stream
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, answer_stream
 
 
 def ask_cli():
@@ -9,7 +9,7 @@ def ask_cli():
         print('Usage: python -m app.ask "your question"')
         return
 
-    for piece in answer_stream([], "", question):
+    for piece in answer_stream(DEFAULT_SYSTEM_PROMPT, [], "", question):
         print(piece, end="", flush=True)
     print()
 

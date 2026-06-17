@@ -5,7 +5,7 @@ from app.config import get_settings
 from app.rag.retrieval import retrieve_relevant_passages, top_passage_is_confident
 
 
-SYSTEM_PROMPT = (
+DEFAULT_SYSTEM_PROMPT = (
     "You are the induction assistant for new employees at the Wimmera Catchment Management "
     "Authority (Wimmera CMA). You help them settle in by answering questions about "
     "organisational policies, procedures, the enterprise agreement, and related induction "
@@ -101,8 +101,8 @@ def stream_in_pieces(text: str):
         yield word + " "
 
 
-def build_message_sequence(history, cross_session_context, context_block, message):
-    messages = [ChatMessage(role=MessageRole.SYSTEM, content=SYSTEM_PROMPT)]
+def build_message_sequence(system_prompt, history, cross_session_context, context_block, message):
+    messages = [ChatMessage(role=MessageRole.SYSTEM, content=system_prompt)]
     if cross_session_context:
         messages.append(
             ChatMessage(
@@ -122,7 +122,9 @@ def build_message_sequence(history, cross_session_context, context_block, messag
     return messages
 
 
-def answer_stream(history: list[ChatMessage], cross_session_context: str, message: str):
+def answer_stream(
+    system_prompt: str, history: list[ChatMessage], cross_session_context: str, message: str
+):
     llm = build_llm()
     standalone_question = condense_to_standalone_question(llm, history, message)
     passages = retrieve_relevant_passages(standalone_question)
@@ -133,7 +135,9 @@ def answer_stream(history: list[ChatMessage], cross_session_context: str, messag
         return
 
     context_block = format_passages_as_context(passages)
-    messages = build_message_sequence(history, cross_session_context, context_block, message)
+    messages = build_message_sequence(
+        system_prompt, history, cross_session_context, context_block, message
+    )
 
     for chunk in llm.stream_chat(messages):
         yield chunk.delta or ""

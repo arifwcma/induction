@@ -1,4 +1,4 @@
-from app.rag.chat import answer_stream
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, answer_stream
 
 
 CASES = [
@@ -15,7 +15,7 @@ CASES = [
 
 
 def collect_answer(question: str) -> str:
-    return "".join(answer_stream([], "", question))
+    return "".join(answer_stream(DEFAULT_SYSTEM_PROMPT, [], "", question))
 
 
 def evaluate_case(case: dict) -> bool:

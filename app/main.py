@@ -7,7 +7,7 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
-from app.auth import auth_backend, current_active_user, fastapi_users
+from app.auth import auth_backend, current_active_user, current_admin, fastapi_users
 from app.chat_store import (
     build_cross_session_context,
     get_or_create_session,
@@ -19,9 +19,10 @@ from app.chat_store import (
     set_session_summary,
 )
 from app.config import get_settings
+from app.config_store import ensure_prompt_seeded, get_system_prompt, update_system_prompt
 from app.db import async_session_maker, create_db_and_tables
 from app.models import User
-from app.rag.chat import answer_stream, summarise_conversation
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, answer_stream, summarise_conversation
 from app.schemas import UserCreate, UserRead, UserUpdate
 
 
@@ -31,6 +32,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
+    async with async_session_maker() as db:
+        await ensure_prompt_seeded(db, DEFAULT_SYSTEM_PROMPT)
     yield
 
 
@@ -92,9 +95,12 @@ async def chat(request: ChatRequest, user: User = Depends(current_active_user)):
             cross_session_context = await build_cross_session_context(
                 db, user.id, chat_session.id
             )
+            system_prompt = await get_system_prompt(db, DEFAULT_SYSTEM_PROMPT)
 
             answer_pieces = []
-            stream = answer_stream(history, cross_session_context, request.message)
+            stream = answer_stream(
+                system_prompt, history, cross_session_context, request.message
+            )
             async for delta in iterate_in_threadpool(stream):
                 answer_pieces.append(delta)
                 yield delta
@@ -133,6 +139,23 @@ async def get_session_messages(session_id: str, user: User = Depends(current_act
         if chat_session is None:
             raise HTTPException(status_code=404, detail="Session not found.")
         return await session_message_payload(db, chat_session.id)
+
+
+class PromptUpdate(BaseModel):
+    prompt: str
+
+
+@app.get("/admin/prompt")
+async def read_prompt(admin: User = Depends(current_admin)):
+    async with async_session_maker() as db:
+        return {"prompt": await get_system_prompt(db, DEFAULT_SYSTEM_PROMPT)}
+
+
+@app.put("/admin/prompt")
+async def write_prompt(update: PromptUpdate, admin: User = Depends(current_admin)):
+    async with async_session_maker() as db:
+        await update_system_prompt(db, update.prompt)
+        return {"prompt": await get_system_prompt(db, DEFAULT_SYSTEM_PROMPT)}
 
 
 if __name__ == "__main__":
