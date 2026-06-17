@@ -56,6 +56,21 @@ class SystemPromptConfig(Base):
     )
 
 
+class Clause(Base):
+    __tablename__ = "clause"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(255), nullable=False)
+    clause_number: Mapped[str] = mapped_column(String(40), default="", nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    breadcrumb: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    scope: Mapped[str] = mapped_column(String(20), default="general", nullable=False)
+    condition: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    page: Mapped[int] = mapped_column(default=0, nullable=False)
+    full_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    cross_refs: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+
 KB_KIND_MESSAGE = "message"
 KB_KIND_DOCUMENT = "document"
 

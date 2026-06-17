@@ -8,4 +8,5 @@ venv/
 *.egg-info/
 storage/
 qdrant_storage/
+kb_index/
 .DS_Store
