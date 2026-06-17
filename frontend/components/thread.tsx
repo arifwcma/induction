@@ -46,16 +46,20 @@ import {
   MicIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  PlusIcon,
   RefreshCwIcon,
   SquareIcon,
 } from "lucide-react";
 import {
   createContext,
   useContext,
+  useState,
   type ComponentType,
   type FC,
   type PropsWithChildren,
 } from "react";
+import { addTextToKB } from "@/lib/api";
+import { useCanTrain } from "@/lib/trainer-context";
 
 export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 
@@ -496,6 +500,41 @@ const UserMessage: FC = () => {
   );
 };
 
+const AddToKbButton: FC = () => {
+  const canTrain = useCanTrain();
+  const [saved, setSaved] = useState(false);
+  const messageText = useAuiState((s) => {
+    const parts = (s.message?.content ?? []) as Array<{ type: string; text?: string }>;
+    return parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join("");
+  });
+
+  if (!canTrain) {
+    return null;
+  }
+
+  async function handleAdd() {
+    try {
+      await addTextToKB(messageText);
+      setSaved(true);
+    } catch {
+      alert("Could not add this message to the knowledge base.");
+    }
+  }
+
+  return (
+    <TooltipIconButton
+      tooltip={saved ? "Added to knowledge base" : "Add to knowledge base"}
+      onClick={handleAdd}
+      disabled={saved}
+    >
+      {saved ? <CheckIcon /> : <PlusIcon />}
+    </TooltipIconButton>
+  );
+};
+
 const UserActionBar: FC = () => {
   return (
     <ActionBarPrimitive.Root
@@ -503,6 +542,7 @@ const UserActionBar: FC = () => {
       autohide="not-last"
       className="aui-user-action-bar-root flex flex-col items-end"
     >
+      <AddToKbButton />
       <ActionBarPrimitive.Edit asChild>
         <TooltipIconButton tooltip="Edit" className="aui-user-action-edit">
           <PencilIcon />

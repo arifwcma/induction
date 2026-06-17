@@ -1,34 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
   type ChatModelAdapter,
+  type ThreadMessageLike,
 } from "@assistant-ui/react";
 import { Thread } from "@/components/thread";
+import { Button } from "@/components/ui/button";
+import { TrainerProvider } from "@/lib/trainer-context";
 import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { ThreadListSidebar } from "@/components/threadlist-sidebar";
-import { Separator } from "@/components/ui/separator";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  API_URL,
+  fetchCurrentUser,
+  getSessionMessages,
+  listSessions,
+  logout,
+  uploadDocumentToKB,
+  type CurrentUser,
+  type SessionSummary,
+} from "@/lib/api";
 
 const WELCOME_MESSAGE =
   "Hi there, and welcome to Wimmera CMA! I'm your induction assistant. " +
   "Ask me anything about our organisational policies and procedures — or, if you'd prefer, " +
   "I can walk you through them with a short guided tour. Where would you like to start?";
 
-function createBackendAdapter(sessionId: string): ChatModelAdapter {
+const WELCOME_THREAD: ThreadMessageLike[] = [
+  { role: "assistant", content: WELCOME_MESSAGE },
+];
+
+function toThreadMessages(stored: { role: string; content: string }[]): ThreadMessageLike[] {
+  if (stored.length === 0) {
+    return WELCOME_THREAD;
+  }
+  return stored.map((message) => ({
+    role: message.role === "user" ? "user" : "assistant",
+    content: message.content,
+  }));
+}
+
+function createBackendAdapter(sessionId: string, onTurnComplete: () => void): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
       const lastMessage = messages[messages.length - 1];
@@ -42,6 +55,7 @@ function createBackendAdapter(sessionId: string): ChatModelAdapter {
 
       const response = await fetch(`${API_URL}/chat`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, message: userText }),
         signal: abortSignal,
@@ -63,39 +77,177 @@ function createBackendAdapter(sessionId: string): ChatModelAdapter {
         answer += decoder.decode(value, { stream: true });
         yield { content: [{ type: "text", text: answer }] };
       }
+
+      onTurnComplete();
     },
   };
 }
 
-export const Assistant = () => {
-  const [sessionId] = useState(() => crypto.randomUUID());
-  const runtime = useLocalRuntime(createBackendAdapter(sessionId), {
-    initialMessages: [{ role: "assistant", content: WELCOME_MESSAGE }],
+function ChatPane({
+  sessionId,
+  initialMessages,
+  onTurnComplete,
+}: {
+  sessionId: string;
+  initialMessages: ThreadMessageLike[];
+  onTurnComplete: () => void;
+}) {
+  const runtime = useLocalRuntime(createBackendAdapter(sessionId, onTurnComplete), {
+    initialMessages,
   });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <SidebarProvider>
-        <div className="flex h-dvh w-full pr-0.5">
-          <ThreadListSidebar />
-          <SidebarInset>
-            <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-              <SidebarTrigger />
-              <Separator orientation="vertical" className="mr-2 h-4" />
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbPage>Wimmera CMA Induction Assistant</BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </header>
-            <div className="flex-1 overflow-hidden">
-              <Thread />
-            </div>
-          </SidebarInset>
-        </div>
-      </SidebarProvider>
+      <div className="flex-1 overflow-hidden">
+        <Thread />
+      </div>
     </AssistantRuntimeProvider>
+  );
+}
+
+export const Assistant = () => {
+  const router = useRouter();
+  const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  const [initialMessages, setInitialMessages] = useState<ThreadMessageLike[]>(WELCOME_THREAD);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      setSessions(await listSessions());
+    } catch {
+      setSessions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const currentUser = await fetchCurrentUser();
+      if (!currentUser) {
+        router.replace("/login");
+        return;
+      }
+      setUser(currentUser);
+      await refreshSessions();
+    })();
+  }, [router, refreshSessions]);
+
+  async function openSession(selectedId: string) {
+    const stored = await getSessionMessages(selectedId);
+    setInitialMessages(toThreadMessages(stored));
+    setSessionId(selectedId);
+  }
+
+  function startNewChat() {
+    setInitialMessages(WELCOME_THREAD);
+    setSessionId(crypto.randomUUID());
+  }
+
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
+  }
+
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      await uploadDocumentToKB(file);
+      alert(`Added "${file.name}" to the knowledge base.`);
+    } catch (uploadError) {
+      alert(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+    } finally {
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = "";
+      }
+    }
+  }
+
+  if (user === undefined) {
+    return <div className="flex h-dvh items-center justify-center text-muted-foreground">Loading...</div>;
+  }
+  if (user === null) {
+    return null;
+  }
+
+  const canTrain = user.role === "trainer" || user.role === "admin";
+
+  return (
+    <TrainerProvider canTrain={canTrain}>
+      <div className="flex h-dvh w-full">
+        <aside className="flex w-72 flex-col border-r bg-sidebar">
+          <div className="border-b p-3">
+            <span className="text-sm font-semibold">Induction Bot</span>
+          </div>
+          <div className="p-3">
+            <Button className="w-full" onClick={startNewChat}>
+              New chat
+            </Button>
+          </div>
+          <nav className="flex-1 overflow-y-auto px-2">
+            {sessions.map((session) => (
+              <button
+                key={session.session_id}
+                type="button"
+                onClick={() => openSession(session.session_id)}
+                className="mb-1 w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-muted aria-[current=true]:bg-muted"
+                aria-current={session.session_id === sessionId}
+                title={session.title}
+              >
+                {session.title}
+              </button>
+            ))}
+          </nav>
+          {canTrain && (
+            <div className="border-t p-3">
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept=".pdf,.docx,.txt"
+                className="hidden"
+                onChange={handleUpload}
+              />
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => uploadInputRef.current?.click()}
+              >
+                Upload document to KB
+              </Button>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2 border-t p-3 text-xs">
+            <span className="truncate" title={user.email}>
+              {user.email}
+            </span>
+            <div className="flex shrink-0 gap-2">
+              {user.role === "admin" && (
+                <a className="underline" href="/admin">
+                  Admin
+                </a>
+              )}
+              <button type="button" className="underline" onClick={handleLogout}>
+                Sign out
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <div className="flex flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center border-b px-4 font-medium">
+            Wimmera CMA Induction Assistant
+          </header>
+          <ChatPane
+            key={sessionId}
+            sessionId={sessionId}
+            initialMessages={initialMessages}
+            onTurnComplete={refreshSessions}
+          />
+        </div>
+      </div>
+    </TrainerProvider>
   );
 };
