@@ -56,6 +56,7 @@ Run these from the project root (`induction`), not as always-on terminals.
 | Seed/ensure admin user | `.\.venv\Scripts\python.exe -m app.seed_admin` | Idempotent. Run once after a fresh DB. |
 | Full knowledge-base ingest | `.\.venv\Scripts\python.exe -m app.kb.ingest_kb` | SLOW + costs API. See warning below. |
 | Rebuild clause table only (cheap recovery) | `.\.venv\Scripts\python.exe -m app.kb.store_clauses_from_corpus` | ~2s, no API cost. Uses existing `kb_index/`. |
+| Reset system prompt to current default | `.\.venv\Scripts\python.exe -m app.reset_prompt` | Run after ANY change to `DEFAULT_SYSTEM_PROMPT`. The prompt is stored in the DB and seeded ONCE — code edits do NOT reach a running deployment until you run this. Overwrites the stored (incl. admin-edited) prompt. |
 | Run reliability eval | `.\.venv\Scripts\python.exe -m app.eval_harness` | A few minutes. Should be 9/9. |
 | Run Arif's smoke cases | `.\.venv\Scripts\python.exe -m app.smoke` | Replays the verbatim cases in `.cursor/smokecases.md` (Cases 1–6). Run after any major LLM change. |
 

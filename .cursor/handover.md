@@ -117,6 +117,7 @@ Concrete follow-ups worth doing (in rough priority):
 4. Postgres event-loop bug (fixed): the ingest once made two `asyncio.run()` calls and crashed on the second ("Event loop is closed"). Keep DB work under a single `asyncio.run`. `app/kb/store_clauses_from_corpus.py` rebuilds the clause table cheaply from the saved BM25 corpus if a re-ingest dies after the expensive situating step.
 5. Re-ingest is DESTRUCTIVE (wipes Qdrant collection incl. trainer KB) and SLOW (~8–12 min). Only run it when ingestion logic or documents changed.
 6. The previously-live site ran an OLD chunk-RAG architecture; the reliability stack supersedes BOTH that and the (never-built, now-deleted) "full KB in context + prompt caching" idea. Ignore any mention of those as current.
+7. **System-prompt staleness footgun (bit us in production).** The system prompt lives in the DB (`system_prompt_config`) and is seeded ONLY when the row is absent (`ensure_prompt_seeded`). So editing `DEFAULT_SYSTEM_PROMPT` in code and deploying does NOT change a running bot — it keeps serving the old/admin-edited stored prompt. Symptom we saw: a server with current code + current KB still gave a wrong, un-cited emergency-work answer because its stored prompt was the old short one (2142 vs 4198 chars). Fix: run `python -m app.reset_prompt` (added) after any prompt change on deploy. The KB/clause table refreshes via ingest, but the prompt does NOT — they are separate.
 
 ## 11. Conventions
 - Keep `.cursor/plan.md` current; commit + push at the end of each phase.
