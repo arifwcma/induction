@@ -35,3 +35,17 @@ Q1: say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. will the l
 Case#8 (Checking is can identify special cases)
 
 Q1: say during an emergency work, i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. will the lunch counted as worked hours or non worked hours?
+
+Case#9 (Responding to tour offer)
+
+Q1: i want short guided tour
+
+Case#10 (Responding to tour offer a bit later)
+
+Q1: lets talk about leaves
+Q2: give an overview
+Q3: lets gor for the short tour you talked about
+
+Case#11 (Short tour lazy way)
+
+Q1: short tour

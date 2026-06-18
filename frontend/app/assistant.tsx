@@ -221,8 +221,9 @@ export const Assistant = () => {
     }
     try {
       await deleteSession(targetId);
-    } catch {
-      // The refresh below will reflect the real server state either way.
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not delete this chat.");
+      return;
     }
     if (targetId === sessionId) {
       startNewChat();
