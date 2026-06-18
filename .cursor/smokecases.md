@@ -27,3 +27,11 @@ Q2: okay lets talk about the short tours
 Case#6: (Issue#3 — broad topic must get a short overview first, not only a clarifying question)
 
 Q1: lets talk about leaves
+
+Case#7 (Multiple questions)
+
+Q1: say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. will the lunch counted as worked hours or non worked hours? also what would be the case during emergency work.
+
+Case#8 (Checking is can identify special cases)
+
+Q1: say during an emergency work, i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. will the lunch counted as worked hours or non worked hours?
