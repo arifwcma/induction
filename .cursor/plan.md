@@ -86,8 +86,20 @@ R7. Eval harness (per-category pass rates, regression gate) + observability.
 8. Frontend: auth UI, persisted thread list, citations (cited inline in answers), Add-to-KB button, admin panel. **[Done, b008679 — typecheck + next build + oxlint pass; not browser-tested against a live backend]**
 9. docker-compose: local Postgres added (7954a80). Server `compose.yaml` Postgres service + new env + nginx routing + prod-hardening documented in handover.md. **[Local done; server steps documented for the EC2 deploy agent]**
 
-### M1 status: ALL CHECKPOINTS BUILT AND PUSHED.
-Backend is import-validated only (no Cohere key / Postgres on the dev machine). Frontend passes typecheck + `next build` + oxlint but is not browser-tested against a live backend. Nothing is deployed yet. Next: Arif validates against a real Postgres + Cohere (see backend validation steps below), then deploy per handover.md "M1 deployment & ops".
+### M1 status: RELIABILITY STACK BUILT + runtime-verified locally (Postgres + Qdrant + Cohere live).
+The reliability stack (R1–R7) is implemented and verified locally against real Postgres/Qdrant/Cohere/OpenAI. Two post-launch reliability phases followed:
+
+Phase 1 (generation/retrieval reliability, no re-ingest needed):
+- Bug2 fix: the KB MAP is authoritative for EXISTENCE/COVERAGE/ENUMERATION ("how many", lists, overviews) in both generation and verification; substantive facts still require retrieved source; scope violations stay a hard fail. Removed the old hard rerank confidence gate and the separate clarify/deflect path.
+- Bug1 second half: query rewriting (`build_search_query`) — retrieve on both the user's wording and a concept-focused rewrite, fuse, then rerank — so the governing general clause is actually retrieved even when a conditional look-alike is the lexical match.
+- Fixed `seed` on all chat/verifier LLM calls to cut non-determinism.
+
+Phase 2 (structure-agnostic ingestion, requires re-ingest):
+- LLM-generated section TITLE per unit (used when the document has no heading); flows into breadcrumb, chunk header, clause record, and the map.
+- Per-page fallback segmentation so unstructured PDFs never yield zero units.
+- KB MAP built from the clause table (not a live regex re-parse), so it reflects generated titles.
+
+Acceptance: `app.eval_harness` 8/8; `app.smoke` (Arif's three verbatim cases in `.cursor/smokecases.md`) clean, 0 abstentions across repeated runs. Bug1 and Bug2 documented in `.cursor/project.md`. Deploy per `deploy/README.md` (`m1_update.sh` / `update.sh` / `hard_update.sh`).
 
 ### New backend endpoints (for the frontend to consume)
 - Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.

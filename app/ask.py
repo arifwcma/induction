@@ -1,13 +1,14 @@
+import asyncio
 import sys
 
-from app.rag.chat import (
-    DEFAULT_SYSTEM_PROMPT,
-    UNSURE_RESPONSE,
-    format_context,
-    generate_answer,
-    verify_answer,
-)
-from app.rag.retrieval import retrieve_relevant_passages, top_passage_is_confident
+from app.db import async_session_maker
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT
+from app.rag.pipeline import produce_grounded_answer
+
+
+async def answer_question(question: str) -> str:
+    async with async_session_maker() as db:
+        return await produce_grounded_answer(db, [], "", DEFAULT_SYSTEM_PROMPT, question)
 
 
 def ask_cli():
@@ -15,19 +16,7 @@ def ask_cli():
     if not question:
         print('Usage: python -m app.ask "your question"')
         return
-
-    passages = retrieve_relevant_passages(question)
-    if not top_passage_is_confident(passages):
-        print(UNSURE_RESPONSE)
-        return
-
-    context_block = format_context(passages, [])
-    answer = generate_answer(DEFAULT_SYSTEM_PROMPT, [], context_block, question)
-    verdict = verify_answer(context_block, question, answer)
-    if not verdict.passed:
-        print(UNSURE_RESPONSE)
-        return
-    print(answer)
+    print(asyncio.run(answer_question(question)))
 
 
 if __name__ == "__main__":

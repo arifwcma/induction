@@ -86,6 +86,18 @@ Abstract gritty mechanical details (boundary checks, clamping, index arithmetic,
 
 
 
+# NO CASE-SPECIFIC FIXES — BUILD GENERAL INTELLIGENCE
+
+Never fix a reported problem by special-casing that one example (no hardcoded keywords, no per-question branches, no per-topic prompt lines). When a behaviour is wrong for one input, fix the general mechanism so the bot responds appropriately to the whole class of such inputs. A fix that only satisfies the specific example Arif gave is unacceptable. Always solve at the level of the underlying capability, not the symptom.
+
+
+# SMOKE TEST AFTER ANY MAJOR LLM CHANGE
+
+After any major change to the LLM behaviour (retrieval, generation, prompt, routing, ingest, applicability/verifier logic), always run the three cases in `.cursor/smokecases.md` end-to-end and confirm each behaves correctly before declaring the change done. These are Arif's canonical acceptance cases (overview/“how many” = Bug2 / tour / Bug1 lunch break). Do not rely only on the automated eval harness.
+
+Run them with the dedicated runner, which replays Arif's verbatim wording multi-turn: `.\.venv\Scripts\python.exe -m app.smoke`. Also run `.\.venv\Scripts\python.exe -m app.eval_harness` (expect 8/8). NEVER reword Arif's smoke cases — real users phrase casually; keep them exactly as written.
+
+
 # DOMAIN LITERACY — WHAT TO ASSUME WHEN EXPLAINING
 
 1. ~15 years in web development: assume strong command of web stacks and general relational-DB persistence. Do not explain these.

@@ -14,7 +14,9 @@ NOISE_PATTERNS = [
     re.compile(r"^\s*$"),
 ]
 
-TOP_CLAUSE = re.compile(r"^(\d{1,2})\.\s+([A-Z][A-Z0-9 ,/'’()\-]{2,})\s*$")
+TOP_CLAUSE = re.compile(r"^(\d{1,2})\.\s+([A-Za-z][A-Za-z0-9 ,/'’()&\-]{2,60})\s*$")
+NUMBER_ONLY = re.compile(r"^(\d{1,2})\.?$")
+ALLCAPS_TITLE = re.compile(r"^[A-Z][A-Z0-9 ,/'’()&\-]{2,60}$")
 SUB_CLAUSE = re.compile(r"^(\d{1,2}(?:\.\d{1,2}){1,3})\s*$")
 APPENDIX = re.compile(r"^APPENDIX\s+([A-Z]):?\s*[-–]?\s*(.*)$", re.IGNORECASE)
 
@@ -72,6 +74,41 @@ def detect_heading(line: str):
     return None
 
 
+def collect_pdf_lines(document) -> list[tuple[str, int]]:
+    collected = []
+    for page_index in range(document.page_count):
+        page_number = page_index + 1
+        for raw_line in document[page_index].get_text().splitlines():
+            collected.append((raw_line, page_number))
+    return collected
+
+
+def next_meaningful_index(lines: list[tuple[str, int]], start: int) -> int:
+    index = start
+    while index < len(lines) and is_noise(lines[index][0]):
+        index += 1
+    return index
+
+
+def merge_split_top_headings(lines: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    merged: list[tuple[str, int]] = []
+    index = 0
+    while index < len(lines):
+        line, page = lines[index]
+        number_match = NUMBER_ONLY.match(line.strip())
+        if number_match:
+            title_index = next_meaningful_index(lines, index + 1)
+            if title_index < len(lines):
+                candidate_title = lines[title_index][0].strip()
+                if ALLCAPS_TITLE.match(candidate_title):
+                    merged.append((f"{number_match.group(1)}. {candidate_title}", page))
+                    index = title_index + 1
+                    continue
+        merged.append((line, page))
+        index += 1
+    return merged
+
+
 def parse_pdf_clauses(pdf_path: Path) -> list[ClauseUnit]:
     document = fitz.open(pdf_path)
     units: list[ClauseUnit] = []
@@ -96,32 +133,62 @@ def parse_pdf_clauses(pdf_path: Path) -> list[ClauseUnit]:
         )
         units.append(current_unit)
 
+    lines = merge_split_top_headings(collect_pdf_lines(document))
+    for raw_line, page_number in lines:
+        if is_noise(raw_line):
+            continue
+
+        heading = detect_heading(raw_line)
+        if heading is None:
+            if current_unit is not None:
+                current_unit.text_lines.append(raw_line.strip())
+            continue
+
+        kind, number_or_label, title = heading
+        if kind == "appendix":
+            current_appendix = f"{number_or_label}: {title}".strip(": ")
+            current_top_label = ""
+            start_unit(number_or_label, title, page_number)
+        elif kind == "top":
+            current_appendix = ""
+            current_top_label = f"{number_or_label}. {title}"
+            start_unit(number_or_label, title, page_number)
+        else:
+            start_unit(number_or_label, "", page_number)
+
+    structured_units = [unit for unit in units if unit.body().strip()]
+    if structured_units:
+        document.close()
+        return structured_units
+
+    fallback_units = page_text_units(document, pdf_path.name)
+    document.close()
+    return fallback_units
+
+
+def page_text_units(document, source: str) -> list[ClauseUnit]:
+    units = []
     for page_index in range(document.page_count):
         page_number = page_index + 1
+        page_lines = []
         for raw_line in document[page_index].get_text().splitlines():
             if is_noise(raw_line):
                 continue
-
-            heading = detect_heading(raw_line)
-            if heading is None:
-                if current_unit is not None:
-                    current_unit.text_lines.append(raw_line.strip())
-                continue
-
-            kind, number_or_label, title = heading
-            if kind == "appendix":
-                current_appendix = f"{number_or_label}: {title}".strip(": ")
-                current_top_label = ""
-                start_unit(number_or_label, title, page_number)
-            elif kind == "top":
-                current_appendix = ""
-                current_top_label = f"{number_or_label}. {title}"
-                start_unit(number_or_label, title, page_number)
-            else:
-                start_unit(number_or_label, "", page_number)
-
-    document.close()
-    return [unit for unit in units if unit.body().strip()]
+            stripped = raw_line.strip()
+            if stripped:
+                page_lines.append(stripped)
+        if not page_lines:
+            continue
+        unit = ClauseUnit(
+            clause_number="",
+            title="",
+            parent_path=[],
+            page=page_number,
+            source=source,
+        )
+        unit.text_lines = page_lines
+        units.append(unit)
+    return units
 
 
 def is_docx_heading(paragraph) -> bool:

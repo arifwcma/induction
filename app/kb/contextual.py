@@ -17,7 +17,8 @@ SITUATING_PROMPT = (
     "applies (for example: applies only during an emergency / AIIMS activation, only to casual "
     "employees, only during probation, only to a specific band). If the passage states a general "
     "rule with no such limit, say it is a general provision. Do not add facts that are not present.\n"
-    "After the sentences, add a final line in exactly this form:\n"
+    "After the sentences, add two final lines in exactly this form:\n"
+    "TITLE: <a short 2-6 word topic heading for this passage>\n"
     "SCOPE: general\n"
     "or\n"
     "SCOPE: conditional - <the condition in a few words>\n\n"
@@ -33,6 +34,7 @@ class SituatingResult:
     prose: str
     scope: str
     condition: str
+    title: str = ""
 
 
 @dataclass
@@ -51,9 +53,12 @@ def parse_situating_output(output: str) -> SituatingResult:
     prose_lines = []
     scope = "general"
     condition = ""
+    title = ""
     for line in output.splitlines():
         stripped = line.strip()
-        if stripped.upper().startswith("SCOPE:"):
+        if stripped.upper().startswith("TITLE:"):
+            title = stripped[len("TITLE:"):].strip()
+        elif stripped.upper().startswith("SCOPE:"):
             value = stripped[len("SCOPE:"):].strip()
             if value.lower().startswith("conditional"):
                 scope = "conditional"
@@ -63,7 +68,9 @@ def parse_situating_output(output: str) -> SituatingResult:
                 scope = "general"
         elif stripped:
             prose_lines.append(stripped)
-    return SituatingResult(prose=" ".join(prose_lines).strip(), scope=scope, condition=condition)
+    return SituatingResult(
+        prose=" ".join(prose_lines).strip(), scope=scope, condition=condition, title=title
+    )
 
 
 def situate_unit(llm: OpenAI, unit: ClauseUnit) -> SituatingResult:
@@ -73,6 +80,20 @@ def situate_unit(llm: OpenAI, unit: ClauseUnit) -> SituatingResult:
         body=unit.body()[:2000],
     )
     return parse_situating_output(llm.complete(prompt).text.strip())
+
+
+def effective_title(unit: ClauseUnit, situating: SituatingResult) -> str:
+    if unit.title.strip():
+        return unit.title.strip()
+    return situating.title.strip()
+
+
+def effective_breadcrumb(unit: ClauseUnit, situating: SituatingResult) -> str:
+    title = effective_title(unit, situating)
+    heading_parts = [part for part in [unit.clause_number, title] if part]
+    heading_label = " ".join(heading_parts)
+    trail = unit.parent_path + [heading_label]
+    return " > ".join(part for part in trail if part)
 
 
 def split_body(body: str) -> list[str]:
@@ -85,14 +106,15 @@ def context_header(unit: ClauseUnit, situating: SituatingResult) -> str:
     if situating.scope == "conditional":
         scope_line = f"Scope: conditional - applies only when {situating.condition}."
     return (
-        f"[{unit.source}] {unit.breadcrumb()}\n"
+        f"[{unit.source}] {effective_breadcrumb(unit, situating)}\n"
         f"Context: {situating.prose}\n"
         f"{scope_line}"
     )
 
 
 def chunks_for_unit(unit: ClauseUnit, situating: SituatingResult) -> list[ContextualChunk]:
-    breadcrumb = unit.breadcrumb()
+    breadcrumb = effective_breadcrumb(unit, situating)
+    title = effective_title(unit, situating)
     header = context_header(unit, situating)
     chunks = []
     for piece in split_body(unit.body()):
@@ -103,6 +125,7 @@ def chunks_for_unit(unit: ClauseUnit, situating: SituatingResult) -> list[Contex
                 metadata={
                     "source": unit.source,
                     "clause_number": unit.clause_number,
+                    "title": title,
                     "breadcrumb": breadcrumb,
                     "situating_context": situating.prose,
                     "scope": situating.scope,

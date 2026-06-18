@@ -1,5 +1,7 @@
 import asyncio
 
+from llama_index.core.llms import ChatMessage, MessageRole
+
 from app.db import async_session_maker
 from app.rag.chat import DEFAULT_SYSTEM_PROMPT, UNSURE_RESPONSE
 from app.rag.pipeline import produce_grounded_answer
@@ -7,13 +9,13 @@ from app.rag.pipeline import produce_grounded_answer
 
 CASES = [
     {
-        "name": "meal break governed by clause 23, not emergency Appendix C",
+        "name": "Bug1: lunch break governed by clause 23, not emergency Appendix C (Arif's verbatim wording)",
         "category": "scope",
         "question": (
-            "I attended the office at 8 AM and left at 4 PM, with lunch from 12:00 to 12:30. "
-            "On a normal day, does my lunch break count as time worked?"
+            "say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. "
+            "will the lunch counted as worked hours or non worked hours?"
         ),
-        "expect_contains_any": ["unpaid", "does not count", "not count", "23.2"],
+        "expect_contains_any": ["unpaid", "does not count", "not count", "non-worked", "non worked", "23.2"],
         "expect_absent_all": ["AIIMS", "Appendix C", "counted as time worked"],
         "expect_abstain": False,
     },
@@ -42,10 +44,35 @@ CASES = [
         "expect_abstain": False,
     },
     {
-        "name": "broad topic prompts a focused clarification, not a dead-end",
-        "category": "clarify",
+        "name": "broad topic gets a real overview, not a dead-end",
+        "category": "overview",
         "question": "Tell me about leaves and breaks.",
+        "expect_contains_any": ["leave", "break"],
         "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
+    },
+    {
+        "name": "Bug2: coverage/count answered from the KB map, not abstained (Arif's verbatim follow-up)",
+        "category": "coverage",
+        "history": [
+            ("user", "tell me about leaves and breaks"),
+            (
+                "assistant",
+                "Wimmera CMA covers several types of leave (annual, personal/carer's, parental, "
+                "compassionate, long service, and more) and rest/meal breaks under the enterprise agreement.",
+            ),
+        ],
+        "question": "how many of them we got",
+        "expect_contains_any": ["leave", "type", "annual", "personal"],
+        "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
+    },
+    {
+        "name": "guided tour offer is honoured with a walkthrough",
+        "category": "tour",
+        "question": "Give me a short guided tour of what's covered.",
+        "expect_contains_any": ["leave", "hours", "pay", "polic", "enterprise"],
+        "expect_absent_all": ["could not find", "don't cover", "do not cover tours"],
         "expect_abstain": False,
     },
     {
@@ -81,12 +108,23 @@ def evaluate(case: dict, answer: str) -> tuple[bool, str]:
     return True, "ok"
 
 
+def build_history(case: dict) -> list[ChatMessage]:
+    history = []
+    for role, content in case.get("history", []):
+        message_role = MessageRole.USER if role == "user" else MessageRole.ASSISTANT
+        history.append(ChatMessage(role=message_role, content=content))
+    return history
+
+
 async def run_eval():
     results_by_category: dict[str, list[bool]] = {}
 
     async with async_session_maker() as db:
         for case in CASES:
-            answer = await produce_grounded_answer(db, [], "", DEFAULT_SYSTEM_PROMPT, case["question"])
+            history = build_history(case)
+            answer = await produce_grounded_answer(
+                db, history, "", DEFAULT_SYSTEM_PROMPT, case["question"]
+            )
             passed, detail = evaluate(case, answer)
             results_by_category.setdefault(case["category"], []).append(passed)
 

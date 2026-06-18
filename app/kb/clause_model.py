@@ -1,6 +1,6 @@
 import re
 
-from app.kb.contextual import SituatingResult
+from app.kb.contextual import SituatingResult, effective_breadcrumb, effective_title
 from app.kb.parse import ClauseUnit
 
 
@@ -21,8 +21,8 @@ def build_clause_record(unit: ClauseUnit, situating: SituatingResult) -> dict:
     return {
         "source": unit.source,
         "clause_number": unit.clause_number,
-        "title": unit.title,
-        "breadcrumb": unit.breadcrumb(),
+        "title": effective_title(unit, situating),
+        "breadcrumb": effective_breadcrumb(unit, situating),
         "scope": situating.scope,
         "condition": situating.condition,
         "page": unit.page,

@@ -1,0 +1,63 @@
+import asyncio
+
+from llama_index.core.llms import ChatMessage, MessageRole
+
+from app.db import async_session_maker
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, UNSURE_RESPONSE
+from app.rag.pipeline import produce_grounded_answer
+
+
+GREETING = (
+    "Hi there, and welcome to Wimmera CMA! I'm your induction assistant. Ask me anything about our "
+    "organisational policies and procedures - or, if you'd prefer, I can walk you through them with "
+    "a short guided tour. Where would you like to start?"
+)
+
+CASE_1 = [
+    "tell me about leaves and breaks",
+    "how many of them we got",
+    "give me an overall idea on leaves and breaks",
+]
+
+CASE_2_OPENING = GREETING
+CASE_2 = ["give me the tour you offerred"]
+
+CASE_3 = [
+    "say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. "
+    "will the lunch counted as worked hours or non worked hours?"
+]
+
+
+def looks_like_abstention(answer: str) -> bool:
+    return answer.strip() == UNSURE_RESPONSE.strip()
+
+
+async def run_conversation(db, opening_assistant_message, user_messages):
+    history = []
+    if opening_assistant_message:
+        history.append(ChatMessage(role=MessageRole.ASSISTANT, content=opening_assistant_message))
+        print(f"ASSISTANT (greeting): {opening_assistant_message}\n")
+
+    for user_message in user_messages:
+        answer = await produce_grounded_answer(db, history, "", DEFAULT_SYSTEM_PROMPT, user_message)
+        flag = "  <-- ABSTAINED" if looks_like_abstention(answer) else ""
+        print(f"USER: {user_message}")
+        print(f"ASSISTANT:{flag}\n{answer}\n")
+        history.append(ChatMessage(role=MessageRole.USER, content=user_message))
+        history.append(ChatMessage(role=MessageRole.ASSISTANT, content=answer))
+
+
+async def run_smoke_cases():
+    async with async_session_maker() as db:
+        print("================ CASE 1 (overview / how many / overall idea) ================\n")
+        await run_conversation(db, None, CASE_1)
+
+        print("================ CASE 2 (guided tour) ================\n")
+        await run_conversation(db, CASE_2_OPENING, CASE_2)
+
+        print("================ CASE 3 (Bug1: lunch break) ================\n")
+        await run_conversation(db, None, CASE_3)
+
+
+if __name__ == "__main__":
+    asyncio.run(run_smoke_cases())

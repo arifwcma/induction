@@ -4,7 +4,7 @@ Human-readable test cases, grouped basic -> critical -> tricky. Each case has a 
 
 Prerequisites for a full run:
 - `.env` has `OPENAI_API_KEY`, `COHERE_API_KEY`, `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
-- `docker compose up -d postgres qdrant`, then `python -m app.ingest`, then `python -m app.seed_admin`.
+- `docker compose up -d postgres qdrant`, then `python -m app.kb.ingest_kb`, then `python -m app.seed_admin`.
 - Backend running on :8000, frontend on :3000.
 
 ---
@@ -17,9 +17,9 @@ Steps: GET `/health`.
 Expected: `{"status":"ok", ...}`.
 
 ### A2. Ingestion runs
-Purpose: documents load into Qdrant with the new section-aware schema.
-Steps: `python -m app.ingest`.
-Expected: prints "Ingested N PDF pages and M DOCX sections into collection 'induction_documents'." No errors.
+Purpose: documents load into Qdrant + BM25 + clause table with contextual chunking and generated titles.
+Steps: `python -m app.kb.ingest_kb`.
+Expected: prints "Ingested N contextual chunks, N clauses, N BM25 records." (currently ~331 / ~311 / ~331). No errors.
 
 ### A3. Domain-restricted registration (happy path)
 Purpose: a wcma user can register.
@@ -118,6 +118,11 @@ Expected: the verifier fails it; the system regenerates or abstains; no fabricat
 Purpose: span-grounded citations are real.
 Steps: for answered cases, check the cited clause number exists in the structured clause model and the quoted span is verbatim.
 Expected: 100% of shown citations resolve to a real clause/span.
+
+### C1e. Bug2 — coverage/"how many" answered, not abstained
+Purpose: prove the bot never abstains on a question clearly answerable from the KB map.
+Steps: ask "tell me about leaves and breaks", then the follow-up "how many of them we got".
+Expected: it answers with the count and list of leave types (drawn from the KB map), and does NOT return the canned "could not find this clearly..." abstention. Part of the eval harness (category: coverage) and `app.smoke` Case 1.
 
 ### C2. Confidence gate — out-of-scope question
 Purpose: req 2 (no guessing).

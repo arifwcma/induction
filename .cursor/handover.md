@@ -9,17 +9,18 @@ You are taking over the induction chatbot. Read `.cursor/instructions.md` (how A
 ## What this project is
 A fast, concise, ChatGPT-like chatbot for NEW Wimmera CMA employees. It answers strictly from the induction documents in `documents/` (PDF + DOCX: policies, procedures, the enterprise agreement). Keeps session memory, opens with a greeting, gives a bite-sized "tour" on request, and asks one clarifying question when a query is vague instead of guessing. It is a clone of the RCS bot (`C:\Users\m.rahman\src\rcsbot`) with a different context, a different Qdrant collection, and a separate deployment. Uses the SAME OpenAI API key as the RCS bot.
 
-## Current status — M1 BUILT (backend + frontend) in git; NOT yet runtime-verified or deployed
-- The Milestone 1 rebuild is implemented and pushed to `main`. See `.cursor/plan.md` for the full M1 scope, decisions, and per-checkpoint commits.
-- IMPORTANT: the M1 KB-handling decision is the RERANKER PIPELINE (Cohere rerank + confidence gate), which OVERRIDES the old "full KB in context + prompt caching" plan described later in this file. Treat the reranker pipeline as current; the NEXT BUILD TASK section below is historical.
-- Backend is import-validated only (no Cohere key / Postgres on the dev machine). Frontend passes typecheck + `next build` + oxlint, but has not been run in a browser against a live backend.
-- The previously-live site still runs the OLD chunk-RAG architecture until this M1 build is deployed.
+## Current status — M1 RELIABILITY STACK BUILT + runtime-verified locally
+- The Milestone 1 reliability stack (R1–R7) plus two post-launch reliability phases are implemented and verified locally. See `.cursor/plan.md` for scope/decisions and `.cursor/blueprint.md` §8b for the current behaviour.
+- IMPORTANT: the M1 KB-handling decision is the RELIABILITY STACK (contextual chunking + structured clause model + hybrid retrieval + Cohere rerank + applicability filter + grounded/verified generation + KB map + eval harness). This OVERRIDES BOTH the old "full KB in context + prompt caching" plan AND the earlier reranker+keyword-scope build described later in this file. The "NEXT BUILD TASK" section below is HISTORICAL — do not implement it.
+- Current behaviour (verified): Bug1 fixed on both halves (applicability filter stops answering from conditional clauses; query rewrite ensures the governing general clause is retrieved). Bug2 fixed (KB map authoritative for coverage/"how many"). Overviews + guided tour work. Eval 8/8; smoke (Arif's 3 verbatim cases) clean.
+- Ingestion command is now `python -m app.kb.ingest_kb` (the old `app/ingest.py` and `app/regression.py` were deleted).
+- Deploy uses `m1_update.sh` (one-off M1 cutover), `update.sh` (light code change), `hard_update.sh` (rebuild + re-ingest). See `deploy/README.md`.
 
 ## M1 deployment & ops (do this to ship M1)
 New dependencies vs old: PostgreSQL (users/sessions/prompt/trainer-KB), Cohere Rerank API, FastAPI-Users auth.
 Required env (server `.env`, gitignored): `OPENAI_API_KEY`, `COHERE_API_KEY`, `JWT_SECRET` (long random), `DATABASE_URL` (postgresql+asyncpg://...), `COOKIE_SECURE=true` (HTTPS), `ALLOWED_EMAIL_DOMAIN=wcma.vic.gov.au`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `FRONTEND_ORIGIN=https://induction.wcma.work`.
 Server `compose.yaml` must gain a `postgres` service (image `postgres:16`, a named volume, the induction DB/user/password) and the `induction` backend must depend on it with `DATABASE_URL` pointing at it (see local `docker-compose.yml` for the shape). Keep `internal-apps` network + nginx SSL conventions.
-Deploy steps after pushing: `git pull` + `docker compose up -d --build`, then ONE-OFF: `docker compose exec -T induction python -m app.seed_admin` (creates the admin) and `docker compose exec -T induction python -m app.ingest` (REQUIRED this deploy — ingestion logic changed to section-aware + scope tags; existing vectors are stale).
+Deploy steps after pushing: prefer the scripts (`m1_update.sh` first cutover, then `update.sh` / `hard_update.sh`). Manually: `git pull` + `docker compose up -d --build`, then ONE-OFF: `docker compose exec -T induction python -m app.seed_admin` (creates the admin) and `docker compose exec -T induction python -m app.kb.ingest_kb` (REQUIRED whenever ingestion/parsing/chunking logic or documents changed — existing vectors/clauses are stale). The backend container is `read_only`; the BM25 index needs a writable `kb_index` volume (see `deploy/compose.server.yaml`).
 nginx: it currently only routes `/chat` to the backend. M1 adds `/auth/*`, `/users/*`, `/sessions/*`, `/kb/*`, `/admin/*` — nginx must route ALL backend API paths to the `induction` backend (not just `/chat`), or scope them under a prefix. Confirm routing before declaring done.
 Cookies: auth uses an httpOnly cookie; frontend and backend are same registrable domain (induction.wcma.work) so `SameSite=Lax` works; ensure `COOKIE_SECURE=true` in prod.
 
@@ -87,7 +88,7 @@ Constraints / checks before you code:
 - Access: `ssh -i 'C:\Users\m.rahman\assets\keys\Playground1.pem' ubuntu@13.55.191.184` then `sudo -u ssm-user bash` (passwordless). `ssm-user` runs `docker` WITHOUT sudo.
 - App dir `/home/ssm-user/apps/induction/`: `compose.yaml` + `.env` there; source repo in `app-src/`.
 - Compose services: `induction` (backend, `read_only: true`, `/tmp` tmpfs, 512M limit), `induction-frontend` (built with `NEXT_PUBLIC_API_URL=https://induction.wcma.work`), `induction-qdrant`. Network `internal-apps` (external). nginx reverse-proxies the domain and terminates SSL.
-- Update the server (from `app-src/`): `bash update.sh`  — or manually `cd app-src && git pull && cd .. && docker compose up -d --build`, then (old path) `docker compose exec -T induction python -m app.ingest`.
+- Update the server (from `app-src/`): `bash update.sh` (light code change, no re-ingest) or `bash hard_update.sh` (rebuild + re-ingest). First M1 cutover: `bash m1_update.sh`. Manual equivalent: `cd app-src && git pull && cd .. && docker compose up -d --build`, then if ingestion logic/docs changed `docker compose exec -T induction python -m app.kb.ingest_kb`.
 - Broader server docs: `C:\Users\m.rahman\src\playground_details`. The `pozi_base` path on the server is a different deployment — do not touch.
 
 ## Gotchas learned the hard way (do not repeat)

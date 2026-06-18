@@ -11,7 +11,6 @@ from app.rag.engine import configure_models, get_vector_store
 DENSE_CANDIDATES = 20
 BM25_CANDIDATES = 20
 PASSAGES_AFTER_RERANK = 8
-RELEVANCE_FLOOR = 0.30
 
 
 _index = None
@@ -109,12 +108,15 @@ def rerank(question: str, candidates: list[Passage]) -> list[Passage]:
     return reranked
 
 
-def retrieve_relevant_passages(question: str) -> list[Passage]:
-    candidates = fuse_candidates(dense_candidates(question), bm25_candidates(question))
+def gather_candidates(queries: list[str]) -> list[Passage]:
+    fused: dict[tuple, Passage] = {}
+    for query in queries:
+        for passage in dense_candidates(query) + bm25_candidates(query):
+            fused.setdefault(dedup_key(passage), passage)
+    return list(fused.values())
+
+
+def retrieve_relevant_passages(question: str, extra_queries: list[str] = ()) -> list[Passage]:
+    queries = [question, *extra_queries]
+    candidates = gather_candidates(queries)
     return rerank(question, candidates)
-
-
-def top_passage_is_confident(passages: list[Passage]) -> bool:
-    if not passages:
-        return False
-    return passages[0].score >= RELEVANCE_FLOOR

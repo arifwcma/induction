@@ -98,6 +98,29 @@ This replaces the keyword-scope pipeline. Scope is solved at ingestion, generica
 
 Constants (initial, tuned by the eval): dense top ~20, BM25 top ~20, rerank top ~8, situating-context 50-100 tokens. Honest residual: target is calibration not perfection; gold eval answers need human validation.
 
+## 8b. Reliability updates since the initial build (Phase 1 & 2) — CURRENT behaviour
+These were added after live testing and supersede any narrower description above. No case-specific fixes: each is a general mechanism.
+
+### Bug2 — false abstention on coverage/enumeration questions
+Symptom: a question the KB can clearly answer (e.g. follow-up "how many of them we got" after "tell me about leaves and breaks") returned the canned abstention most of the time (measured ~83% abstain). Root cause: the model correctly listed every leave type from the KB MAP, but the verifier graded each listed item against the RETRIEVED passages only and failed them as "not supported by source material". Fix: the KB MAP is authoritative for EXISTENCE / COVERAGE / ENUMERATION (what topics/sections exist, listing them, counting them) in BOTH generation and verification; SUBSTANTIVE policy facts (amounts, durations, eligibility, conditions) still REQUIRE retrieved source material; scope violations (Bug1) remain a hard fail. This removes false abstention without opening a hallucination hole, because the map carries only section titles, never rule content. Re-ingestion does NOT fix Bug2 — it is a verification-scope issue. Guiding principle (Arif): answer only accurately, but NEVER abstain on a question clearly answerable from the KB.
+
+### KB map / outline (`app/rag/kb_outline.py`)
+A compact structural map — each document and the topics/sections it covers — is injected into every chat turn as a system message, separate from the retrieved SOURCE MATERIAL. It is the model's authoritative answer source for coverage/overview/tour/"how many" questions, and the navigation aid for walkthroughs. It is built from the stored clause table (cached in process), so it reflects LLM-generated titles and works for poorly-structured documents. It is explicitly NOT a source of rule content.
+
+### Bug1 second half — retrieval recall via query rewriting (`build_search_query` in `app/rag/chat.py`)
+The applicability filter stops the bot ANSWERING from a conditional clause, but the governing GENERAL clause must still be retrieved. A user's casual scenario wording ("say i worked 8 AM - 4 PM, with lunch 12-12:30, does lunch count as worked hours?") embeds far from clause 23.2 while the emergency Appendix C is a near-lexical match, so 23.2 was never retrieved and the (correct) verifier abstained. Fix: an LLM rewrites the standalone question into a concept-focused search query (drops scenario noise, expands everyday terms like "lunch" -> "meal break"); dense+BM25 candidates are gathered for BOTH the original and the rewritten query, fused, then reranked against the true question. This is a standard general RAG technique, not a case fix.
+
+### Structure-agnostic ingestion (Phase 2)
+1. Generated titles: the situating LLM call also emits a short `TITLE:` for each unit; the effective title (the document's own heading if present, else the generated one) flows into the breadcrumb, chunk header, clause record, and the map. This means a document with no headings still yields usable section titles.
+2. Fallback segmentation: if structure-aware PDF parsing yields zero units (an unstructured PDF), ingestion falls back to one unit per page so content is never silently dropped.
+3. Richer breadcrumbs: sub-clauses now carry `parent > number generated-title` (e.g. `23. REST BREAKS / MEAL BREAKS > 23.2 Meal Break Policy`), which also improved retrieval recall.
+
+### Determinism
+All chat/verifier LLM calls pass a fixed `seed` (via `additional_kwargs`) at `temperature=0` to cut run-to-run variance. Best-effort only (OpenAI does not guarantee determinism), but it materially stabilised verdicts.
+
+### Acceptance (current)
+Eval harness `app/eval_harness.py`: 8/8 across scope, out-of-scope, meta, overview, coverage (incl. a Bug2 case), tour. Smoke runner `app/smoke.py` replays Arif's three verbatim cases from `.cursor/smokecases.md` end-to-end (overview / "how many" / overall-idea multi-turn; guided tour; Bug1 lunch break). Measured 0 abstentions across repeated full Case-1 runs after Phase 2.
+
 ## 9. Memory model
 - Within a session: full message history loaded from Postgres each turn (not an in-process buffer).
 - Cross-session (lightweight): each `ChatSession` has a `summary` (2-3 sentences), regenerated after each turn from the running transcript. On a new turn, the other sessions' summaries are concatenated and injected as a system message labelled as background context that must not override the source passages.
@@ -136,14 +159,25 @@ Constants (initial, tuned by the eval): dense top ~20, BM25 top ~20, rerank top 
 - `app/models.py`: User + ChatSession + ChatMessageRecord + SystemPromptConfig + TrainerKBEntry; role + kind constants.
 - `app/auth.py`, `app/schemas.py`, `app/seed_admin.py`: auth.
 - `app/rag/engine.py`: configures LlamaIndex LLM + embeddings + Qdrant vector store (`check_compatibility=False`).
-- `app/rag/retrieval.py`: index, Cohere reranker, retrieve+rerank, confidence check.
-- `app/rag/chat.py`: default system prompt, condense, citation labels, `answer_stream`, `summarise_conversation`.
-- `app/ingest.py`: section-aware ingestion + scope tags.
+- `app/rag/retrieval.py`: dense (Qdrant) + BM25 candidate gathering across multiple queries, fuse/dedup, Cohere rerank, `Passage` model.
+- `app/rag/chat.py`: default system prompt (map+source authority, scope/precedence), condense, `build_search_query` (query rewrite), generation, verifier (map-authoritative for existence/coverage), `build_llm` (temperature 0 + fixed seed), citation labels, `summarise_conversation`.
+- `app/rag/pipeline.py`: `produce_grounded_answer` — orchestrates map + condense + query-rewrite + retrieve + applicability filter + clause expansion + generate + verify(+retry); the single answer path used by `/chat`, `app.ask`, `app.smoke`, and the eval harness.
+- `app/rag/applicability.py`: LLM applicability filter — drops conditional passages whose condition does not hold for the question (primary Bug1 guard).
+- `app/rag/expansion.py`: expands retrieved clauses with sibling + cross-referenced clauses from the clause table.
+- `app/rag/kb_outline.py`: builds the KB MAP from the clause table (cached); authoritative for coverage/overview/tour/"how many".
+- `app/kb/parse.py`: structure-aware PDF/DOCX parsing (merges split top-level headings; per-page fallback for unstructured PDFs).
+- `app/kb/contextual.py`: situating LLM call (prose + scope + generated TITLE), effective title/breadcrumb, contextual chunking.
+- `app/kb/clause_model.py`: builds clause records (effective title/breadcrumb, cross-refs) for the clause table.
+- `app/kb/bm25_index.py`: on-disk BM25 corpus in `kb_index/`.
+- `app/kb/ingest_kb.py`: full ingest — parse -> situate/chunk -> embed to Qdrant + save BM25 + persist clause table. Run as `python -m app.kb.ingest_kb`.
+- `app/kb/store_clauses_from_corpus.py`: cheap clause-table rebuild from the saved BM25 corpus (no LLM cost).
 - `app/chat_store.py`, `app/config_store.py`, `app/kb_store.py`, `app/admin_store.py`: async DB helpers.
 - `app/trainer_kb.py`: upload extraction + KB embed/remove.
-- `app/main.py`: app wiring, lifespan (create tables + seed prompt), routers, all endpoints.
-- `app/regression.py`: seeded Bug1 regression (clause-23.3 meal-break case).
-- `app/ask.py`: CLI for ad-hoc questions.
+- `app/main.py`: app wiring, lifespan (create tables + seed prompt), routers, all endpoints; `/chat` calls `produce_grounded_answer`.
+- `app/eval_harness.py`: adversarial eval (scope/out-of-scope/meta/overview/coverage(incl. Bug2)/tour), regression gate.
+- `app/smoke.py`: replays Arif's three verbatim smoke cases end-to-end.
+- `app/ask.py`: CLI for ad-hoc questions (uses the shared pipeline).
+- Removed: `app/ingest.py` and `app/regression.py` (superseded by `app/kb/ingest_kb.py` and `app/eval_harness.py`).
 
 ## 15. Frontend (Next.js App Router)
 - `lib/api.ts`: API base + all fetch wrappers (always `credentials:"include"`); login posts form-urlencoded.
@@ -158,8 +192,8 @@ Constants (initial, tuned by the eval): dense top ~20, BM25 top ~20, rerank top 
 `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL` (default gpt-4o-mini), `OPENAI_EMBEDDING_MODEL`, `COHERE_API_KEY`, `COHERE_RERANK_MODEL` (rerank-english-v3.0), `QDRANT_URL`, `QDRANT_COLLECTION` (induction_documents), `DOCUMENTS_DIR`, `FRONTEND_ORIGIN`, `DATABASE_URL` (postgresql+asyncpg://...), `JWT_SECRET`, `COOKIE_SECURE` (true in prod), `ALLOWED_EMAIL_DOMAIN` (wcma.vic.gov.au), `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Frontend: `NEXT_PUBLIC_API_URL`.
 
 ## 17. Build / run / deploy
-Local: `docker compose up -d postgres qdrant`; `pip install -r requirements.txt`; `python -m app.ingest`; `python -m app.seed_admin`; `uvicorn app.main:app`; `cd frontend && npm install && npm run dev`.
-Verify Bug1: `python -m app.regression`.
+Local: `docker compose up -d postgres qdrant`; `pip install -r requirements.txt`; `python -m app.kb.ingest_kb`; `python -m app.seed_admin`; `uvicorn app.main:app`; `cd frontend && npm install && npm run dev`.
+Verify reliability: `python -m app.eval_harness` (expect 8/8) and `python -m app.smoke` (Arif's three verbatim cases).
 Deploy (AWS EC2, Docker, behind nginx/SSL): add a Postgres service to the server compose, set all env, route ALL backend API paths (`/auth/*`, `/users/*`, `/sessions/*`, `/kb/*`, `/admin/*`, `/chat`) to the backend, then one-off `seed_admin` + `ingest`. See `handover.md` for server specifics.
 
 ## 18. Milestone 2 (out of scope for M1, noted for the reproducer)
