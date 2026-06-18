@@ -81,12 +81,20 @@ def make_llm(*, fast: bool = False, max_tokens: int | None = None, attempt: int 
 
     from llama_index.llms.openai import OpenAI
 
+    extra: dict = {"seed": FIXED_SEED + attempt * 101}
+    # GPT-5 models are reasoning models: keep effort minimal so the mechanical
+    # fast-lane steps (condense, query rewrite, applicability, verify) stay cheap
+    # and low-latency rather than burning reasoning tokens on yes/no judgements.
+    if model.startswith("gpt-5"):
+        extra["reasoning_effort"] = "minimal"
     kwargs: dict = {
         "model": model,
         "api_key": settings.openai_api_key,
         "temperature": 0,
-        "additional_kwargs": {"seed": FIXED_SEED + attempt * 101},
+        "additional_kwargs": extra,
     }
     if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+        # Reasoning models bill reasoning tokens against the output budget, so a
+        # tiny cap can yield an empty completion; keep some headroom.
+        kwargs["max_tokens"] = max(max_tokens, 256) if model.startswith("gpt-5") else max_tokens
     return OpenAI(**kwargs)

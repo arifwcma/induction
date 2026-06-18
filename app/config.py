@@ -9,7 +9,10 @@ class Settings(BaseSettings):
 
     llm_provider: str = "openai"
     fast_llm_provider: str = "openai"
-    fast_chat_model: str = "gpt-4o-mini"
+    # gpt-5-nano (vs the old gpt-4o-mini): cheaper, supports seed for deterministic
+    # mechanical steps, and is not subject to gpt-4o-mini's 10k-requests/day Tier-1
+    # cap (GPT-5 models are RPM/TPM-limited only).
+    fast_chat_model: str = "gpt-5-nano"
 
     openai_api_key: str = ""
     openai_chat_model: str = "gpt-4o-mini"
