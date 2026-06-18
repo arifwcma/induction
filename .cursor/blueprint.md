@@ -27,7 +27,7 @@ REJECTED FIX (do not reproduce): a keyword `detect_scope` matching "AIIMS/incide
 CORRECT FIX: make every chunk carry its own structural context at ingestion (Anthropic Contextual Retrieval), plus grounded/verified generation, calibrated abstention, and an eval harness. See section 6.
 
 ## 4. Stack (pinned)
-1. LLM + embeddings: OpenAI `gpt-4o-mini` (chat), `text-embedding-3-small` (embeddings), via LlamaIndex.
+1. LLMs (two lanes, provider-agnostic via `app/llm_factory.py`): the **answer lane** writes the user-facing reply on the strongest model — Anthropic **Claude Opus 4.8** (`LLM_PROVIDER=anthropic`, `llama-index-llms-anthropic==0.11.4`); the **fast lane** runs every mechanical step (condense, query rewrite, applicability, verifier, ingest situating, session summary) on OpenAI `gpt-4o-mini`. Embeddings: OpenAI `text-embedding-3-small`. The fast lane is seedable/deterministic; Opus 4.8 rejects `temperature` and has no seed (adaptive thinking), so its retry variation comes from its own sampling — the factory registers Opus 4.8's context window and no-temperature behaviour at runtime so the pinned package works. Flip `LLM_PROVIDER=openai` to run everything on `gpt-4o-mini`.
 2. Reranker: Cohere Rerank (`rerank-english-v3.0`), via `llama-index-postprocessor-cohere-rerank==0.9.0` + `cohere==6.1.0`. Chosen over a local cross-encoder because the prod backend container is capped at 512M; rerank compute is offloaded.
 3. Vector store: Qdrant `v1.12.5`, collection `induction_documents`.
 4. Relational DB: PostgreSQL 16, via SQLAlchemy `2.0.51` async + `asyncpg==0.31.0` (+ `greenlet`).
@@ -88,8 +88,9 @@ This replaces the keyword-scope pipeline. Scope is solved at ingestion, generica
 ### 6C. Grounded generation
 7. Generic scope/precedence prompt (NO hardcoded keywords): obey any condition stated in a passage's context; a conditional clause governs only if its condition is met; apply precedence (NES-overrides per EA clause 4.3; specific-over-general).
 8. Span-grounded citations: every substantive claim anchored to a verbatim span + clause number.
-9. Verifier pass: a cheap second LLM call checks each claim is supported by a retrieved span, the cited clause exists (against the clause model) and is in-scope, and no interacting clause was ignored. Fail -> regenerate once; still fail -> abstain.
-10. Calibrated abstention: rerank confidence + verifier verdict decide answer / clarify / route to People & Culture. The verifier runs in PARALLEL with streaming the draft (intervene only on failure) so latency stays near current (+ ~1-3s worst case).
+9. Verifier pass (fast lane): a cheap second LLM call checks each claim is supported (map-authoritative for existence/coverage; source-required for substantive facts). It does NOT re-judge scope — it trusts the upstream applicability filter. Fail -> regenerate (different draft); still fail -> agentic re-retrieval then retry; still fail -> abstain.
+10. Agentic re-retrieval (`stream_grounded_answer`): when no draft passes verification, the fast lane proposes a refined, concept-focused search query informed by what was already found, retrieves again, merges, and tries once more before abstaining — rescues hard/awkward questions instead of abstaining prematurely.
+11. Calibrated abstention: the verifier verdict alone decides answer vs `UNSURE_RESPONSE` (the old hard rerank-confidence gate was removed). Never guess.
 
 ### 6D. Measurement and feedback
 11. Eval harness (first-class deliverable): adversarial cases across scope, clause-interaction, scenario/computation (the 0-vs-30 case), out-of-scope (must abstain), citation-correctness; per-category pass rates; runs as a regression gate.
@@ -116,7 +117,7 @@ The applicability filter stops the bot ANSWERING from a conditional clause, but 
 3. Richer breadcrumbs: sub-clauses now carry `parent > number generated-title` (e.g. `23. REST BREAKS / MEAL BREAKS > 23.2 Meal Break Policy`), which also improved retrieval recall.
 
 ### Determinism
-All chat/verifier LLM calls pass a fixed `seed` (via `additional_kwargs`) at `temperature=0` to cut run-to-run variance. Best-effort only (OpenAI does not guarantee determinism), but it materially stabilised verdicts. The generation retry loop now uses a DIFFERENT seed per attempt (a fixed-seed retry produced an identical draft and was therefore useless), so a transient verifier rejection can recover instead of abstaining.
+Fast-lane (`gpt-4o-mini`) calls pass a fixed `seed` (via `additional_kwargs`) at `temperature=0` to cut run-to-run variance; the retry uses a different seed per attempt. Opus 4.8 (answer lane) cannot be seeded and rejects `temperature` (adaptive thinking), so the answer is non-deterministic — but determinism now matters most for the steps that SHAPE retrieval (condense, query rewrite, applicability, verifier), which all run on the seedable fast lane. This is a core reason for the hybrid split.
 
 ### Phase 3 — emergency-work questions + conversational polish (after second round of live testing)
 1. Verifier no longer second-guesses scope. The applicability filter (`keep_applicable`) is the scope gate; it now KEEPS conditional content when the question is explicitly about that condition (e.g. "tell me about emergency work") and STRIPS it for ordinary-day questions. The verifier TRUSTS this — any conditional passage still in context was already deemed applicable — and only judges grounding + fabrication. This fixed false abstention on explicit emergency questions (Issue#1/#2) while Bug1 (ordinary-day) still holds.
@@ -125,6 +126,13 @@ All chat/verifier LLM calls pass a fixed `seed` (via `additional_kwargs`) at `te
 4. Tour self-awareness (system prompt). The opening greeting is frontend-only and never reaches backend history, so the bot could not relate "the short tours" to its own offer. The prompt now makes the bot self-aware that it offers a guided tour, honoured even with no greeting in history (Issue#2.2).
 5. Overview-first (system prompt). Broad open topics get a concise overview FIRST, then optionally one focused follow-up; never a clarifying-question-only reply (Issue#3).
 6. Legible map (`render_outline`). The map is rendered one section per line (was one long semicolon string); the verifier intermittently failed to find real items (e.g. "Workplace Training Leave", §47) in the wall of text, causing flaky Bug2 abstention.
+
+### Phase 4 — Opus 4.8 answer lane, hybrid split, agentic retrieval, real streaming
+1. Provider-agnostic LLM (`app/llm_factory.py`). `make_llm(fast=?, attempt=?)` builds either lane. `LLM_PROVIDER`/`ANTHROPIC_CHAT_MODEL` pick the answer model (default Claude Opus 4.8); `FAST_LLM_PROVIDER`/`FAST_CHAT_MODEL` pick the fast model (default `gpt-4o-mini`). For Opus 4.8 the factory registers the model's context window and adds it to the no-temperature list (4.8 rejects `temperature`).
+2. Hybrid model split. Opus 4.8 generates the answer; the fast lane runs condense, query rewrite, applicability, verifier, ingest situating and session summary. This restores reproducible retrieval and cut a clean turn from ~60–110s (everything on Opus) to ~8–11s to first token.
+3. Applicability reworked to keep-by-default (`app/rag/applicability.py`). It now feeds the judge the provision's section **breadcrumb** (so terse/cryptic conditions like `'AIMS control system'` or `'non-casual employees'` resolve from their heading) and EXCLUDES a provision only when it clearly belongs to a special/different scenario than the question — fixing false drops of relevant clauses (e.g. clause 1.5, clause 36.1) that surfaced when the stricter fast model replaced Opus on this step. The per-condition judgments run CONCURRENTLY (one fast-lane call per unique condition), which alone cut prep latency ~7s.
+4. Agentic re-retrieval (see 6C item 10).
+5. Real streaming. `/chat` emits newline-delimited JSON frames: `{"t":"status"|"delta"|"reset"|"final","v":...}`. Status milestones show immediately; the Opus answer streams live as `delta`s; the verifier still GATES what stands — a draft that fails verification is `reset` (cleared) and replaced, so users never keep unverified content. `produce_grounded_answer` drives the same generator and returns only the final for non-streaming callers (eval/smoke/ask).
 
 ### Acceptance (current)
 Eval harness `app/eval_harness.py`: 9/9 across scope (incl. Bug1 ordinary-day AND Issue#1 emergency-work meal break), out-of-scope, meta, overview, coverage (incl. a Bug2 case), tour. Smoke runner `app/smoke.py` replays Arif's verbatim cases from `.cursor/smokecases.md` end-to-end (Cases 1–6: overview/"how many"/overall-idea; guided tour; Bug1 lunch; Issue#1 emergency follow-up; Issue#2+#2.2 emergency-then-tour; Issue#3 broad topic). Issue#1 measured 6/6 correct (answers "counted as time worked, clause 1.5"). Re-ingest produces ~385 chunks / ~368 clauses.
@@ -155,22 +163,23 @@ Eval harness `app/eval_harness.py`: 9/9 across scope (incl. Bug1 ordinary-day AN
 
 ## 13. Endpoints (all browser calls send `credentials: "include"`)
 - Auth: `POST /auth/register`, `POST /auth/jwt/login` (form: username,password), `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.
-- Chat (login required): `POST /chat` `{session_id, message}` (text/plain stream); `GET /sessions`; `GET /sessions/{id}/messages`.
+- Chat (login required): `POST /chat` `{session_id, message}` (newline-delimited JSON stream, `application/x-ndjson`; frames `{"t":"status"|"delta"|"reset"|"final","v":...}`); `GET /sessions`; `GET /sessions/{id}/messages`.
 - Trainer: `POST /kb/text` `{content}`; `POST /kb/document` (multipart `file`).
 - Admin: `GET|PUT /admin/prompt`; `GET /admin/users`; `POST /admin/users/{id}/role` `{role}`; `POST /admin/users/{id}/reset-password` `{new_password}`; `GET /admin/users/{id}/sessions`; `GET /admin/users/{id}/sessions/{sid}/messages`; `GET /admin/kb`; `DELETE /admin/kb/{id}`.
 - `GET /health`.
 - CORS: allow the frontend origin with `allow_credentials=True`.
 
 ## 14. Backend file map
-- `app/config.py`: pydantic-settings (OpenAI/Cohere keys + models, qdrant, documents_dir, frontend_origin, database_url, jwt_secret, cookie_secure, allowed_email_domain, admin_email/password).
+- `app/config.py`: pydantic-settings (llm_provider + Anthropic key/model, fast_llm_provider + fast_chat_model, OpenAI/Cohere keys + models, qdrant, documents_dir, frontend_origin, database_url, jwt_secret, cookie_secure, allowed_email_domain, admin_email/password).
+- `app/llm_factory.py`: provider-agnostic LLM builder — `make_llm(fast=?, attempt=?)`; answer lane (Opus 4.8) vs fast lane (`gpt-4o-mini`); registers Opus 4.8 context window + no-temperature at runtime.
 - `app/db.py`: async engine, `async_session_maker`, `Base`, `create_db_and_tables`, `get_async_session`.
 - `app/models.py`: User + ChatSession + ChatMessageRecord + SystemPromptConfig + TrainerKBEntry; role + kind constants.
 - `app/auth.py`, `app/schemas.py`, `app/seed_admin.py`: auth.
 - `app/rag/engine.py`: configures LlamaIndex LLM + embeddings + Qdrant vector store (`check_compatibility=False`).
 - `app/rag/retrieval.py`: dense (Qdrant) + BM25 candidate gathering across multiple queries, fuse/dedup, Cohere rerank, `Passage` model.
-- `app/rag/chat.py`: default system prompt (map+source authority, scope/precedence), condense, `build_search_query` (query rewrite), generation, verifier (map-authoritative for existence/coverage), `build_llm` (temperature 0 + fixed seed), citation labels, `summarise_conversation`.
-- `app/rag/pipeline.py`: `produce_grounded_answer` — orchestrates map + condense + query-rewrite + retrieve + applicability filter + clause expansion + generate + verify(+retry); the single answer path used by `/chat`, `app.ask`, `app.smoke`, and the eval harness.
-- `app/rag/applicability.py`: LLM applicability filter — drops conditional passages whose condition does not hold for the question (primary Bug1 guard).
+- `app/rag/chat.py`: default system prompt (map+source authority, scope/precedence), condense, `build_search_query` (query rewrite), `build_refined_search_query` (agentic refine), `generate_answer` + `generate_answer_stream` (live token streaming), verifier (map-authoritative for existence/coverage), `build_llm` (answer lane) / `build_fast_llm` (fast lane), citation labels, `summarise_conversation`.
+- `app/rag/pipeline.py`: `stream_grounded_answer` (async generator yielding status/delta/reset/final frames; agentic re-retrieval) and `produce_grounded_answer` (drives it, returns the final) — the single answer path used by `/chat`, `app.ask`, `app.smoke`, and the eval harness.
+- `app/rag/applicability.py`: async applicability filter — keep-by-default; excludes a conditional passage only when it clearly belongs to a different scenario; uses the section breadcrumb for context; per-condition judgments run concurrently (primary Bug1 guard).
 - `app/rag/expansion.py`: expands retrieved clauses with sibling + cross-referenced clauses from the clause table.
 - `app/rag/kb_outline.py`: builds the KB MAP from the clause table (cached); authoritative for coverage/overview/tour/"how many".
 - `app/kb/parse.py`: structure-aware PDF/DOCX parsing (merges split top-level headings; per-page fallback for unstructured PDFs).
@@ -191,17 +200,17 @@ Eval harness `app/eval_harness.py`: 9/9 across scope (incl. Bug1 ordinary-day AN
 - `lib/api.ts`: API base + all fetch wrappers (always `credentials:"include"`); login posts form-urlencoded.
 - `lib/trainer-context.tsx`: `TrainerProvider`/`useCanTrain` to gate trainer UI.
 - `app/login/page.tsx`: login/register (domain hint), redirects to `/` on success.
-- `app/assistant.tsx`: auth gate (`/users/me`, else redirect to `/login`); custom sidebar listing `/sessions` (new chat + reload history); a keyed `ChatPane` building `useLocalRuntime` with a streaming adapter to `/chat`; trainer doc-upload; logout; admin link.
+- `app/assistant.tsx`: auth gate (`/users/me`, else redirect to `/login`); custom sidebar listing `/sessions` (new chat + reload history); a keyed `ChatPane` building `useLocalRuntime` with a streaming adapter to `/chat` that parses newline-delimited JSON frames (status shown as muted italics until the answer starts streaming; delta appends; reset clears an unverified draft; final commits); trainer doc-upload; logout; admin link.
 - `components/thread.tsx`: assistant-ui thread; `AddToKbButton` on user messages (trainer-only) posts `/kb/text`.
 - `app/admin/page.tsx`: admin-gated panel (users table with role select + reset password + view chats; system prompt editor; KB entries list + delete).
 - Citations: rendered inline in the assistant's markdown answer (the model writes the labels); no separate citations widget in M1.
 
 ## 16. Environment variables
-`OPENAI_API_KEY`, `OPENAI_CHAT_MODEL` (default gpt-4o-mini), `OPENAI_EMBEDDING_MODEL`, `COHERE_API_KEY`, `COHERE_RERANK_MODEL` (rerank-english-v3.0), `QDRANT_URL`, `QDRANT_COLLECTION` (induction_documents), `DOCUMENTS_DIR`, `FRONTEND_ORIGIN`, `DATABASE_URL` (postgresql+asyncpg://...), `JWT_SECRET`, `COOKIE_SECURE` (true in prod), `ALLOWED_EMAIL_DOMAIN` (wcma.vic.gov.au), `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Frontend: `NEXT_PUBLIC_API_URL`.
+`LLM_PROVIDER` (default openai; set `anthropic` for Opus), `ANTHROPIC_API_KEY`, `ANTHROPIC_CHAT_MODEL` (default claude-opus-4-8), `FAST_LLM_PROVIDER` (default openai), `FAST_CHAT_MODEL` (default gpt-4o-mini), `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL` (default gpt-4o-mini), `OPENAI_EMBEDDING_MODEL`, `COHERE_API_KEY`, `COHERE_RERANK_MODEL` (rerank-english-v3.0), `QDRANT_URL`, `QDRANT_COLLECTION` (induction_documents), `DOCUMENTS_DIR`, `FRONTEND_ORIGIN`, `DATABASE_URL` (postgresql+asyncpg://...), `JWT_SECRET`, `COOKIE_SECURE` (true in prod), `ALLOWED_EMAIL_DOMAIN` (wcma.vic.gov.au), `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Frontend: `NEXT_PUBLIC_API_URL`.
 
 ## 17. Build / run / deploy
 Local: `docker compose up -d postgres qdrant`; `pip install -r requirements.txt`; `python -m app.kb.ingest_kb`; `python -m app.seed_admin`; `uvicorn app.main:app`; `cd frontend && npm install && npm run dev`.
-Verify reliability: `python -m app.eval_harness` (expect 8/8) and `python -m app.smoke` (Arif's three verbatim cases).
+Verify reliability: `python -m app.eval_harness` (expect 9/9) and `python -m app.smoke` (Arif's verbatim cases). Install adds `llama-index-llms-anthropic`; set `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` to use Opus 4.8.
 Deploy (AWS EC2, Docker, behind nginx/SSL): add a Postgres service to the server compose, set all env, route ALL backend API paths (`/auth/*`, `/users/*`, `/sessions/*`, `/kb/*`, `/admin/*`, `/chat`) to the backend, then one-off `seed_admin` + `ingest`. See `handover.md` for server specifics.
 
 ## 18. Milestone 2 (out of scope for M1, noted for the reproducer)

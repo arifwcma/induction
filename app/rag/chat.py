@@ -234,15 +234,13 @@ def format_context(passages: list[Passage], clauses: list[Clause]) -> str:
     return "\n\n".join(blocks)
 
 
-def generate_answer(
+def build_answer_messages(
     system_prompt: str,
     history: list[ChatMessage],
     context_block: str,
     message: str,
     kb_map: str = "",
-    attempt: int = 0,
-) -> str:
-    llm = build_llm(attempt)
+) -> list[ChatMessage]:
     messages = [ChatMessage(role=MessageRole.SYSTEM, content=system_prompt)]
     if kb_map:
         messages.append(
@@ -261,7 +259,38 @@ def generate_answer(
             ChatMessage(role=MessageRole.USER, content=message),
         ]
     )
+    return messages
+
+
+def generate_answer(
+    system_prompt: str,
+    history: list[ChatMessage],
+    context_block: str,
+    message: str,
+    kb_map: str = "",
+    attempt: int = 0,
+) -> str:
+    llm = build_llm(attempt)
+    messages = build_answer_messages(system_prompt, history, context_block, message, kb_map)
     return llm.chat(messages).message.content.strip()
+
+
+async def generate_answer_stream(
+    system_prompt: str,
+    history: list[ChatMessage],
+    context_block: str,
+    message: str,
+    kb_map: str = "",
+    attempt: int = 0,
+):
+    """Stream the answer token-by-token from the answer-lane model. Yields text
+    deltas as they arrive so the UI can render the reply as it forms."""
+    llm = build_llm(attempt)
+    messages = build_answer_messages(system_prompt, history, context_block, message, kb_map)
+    response = await llm.astream_chat(messages)
+    async for chunk in response:
+        if chunk.delta:
+            yield chunk.delta
 
 
 def verify_answer(context_block: str, question: str, answer: str, kb_map: str = "") -> VerifierVerdict:

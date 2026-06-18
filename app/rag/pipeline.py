@@ -1,3 +1,5 @@
+from typing import AsyncIterator
+
 from llama_index.core.llms import ChatMessage
 
 from starlette.concurrency import run_in_threadpool
@@ -10,7 +12,7 @@ from app.rag.chat import (
     build_search_query,
     condense_to_standalone_question,
     format_context,
-    generate_answer,
+    generate_answer_stream,
     verify_answer,
 )
 from app.rag.applicability import keep_applicable
@@ -51,7 +53,6 @@ def _found_labels(passages: list[Passage], clauses: list[Clause]) -> list[str]:
     for clause in clauses:
         if clause.breadcrumb:
             labels.append(clause.breadcrumb)
-    # De-duplicate while preserving order.
     return list(dict.fromkeys(labels))
 
 
@@ -66,51 +67,73 @@ def _build_context_block(
     return context_block
 
 
-async def _draft_and_verify(
+async def _retrieve_and_filter(
+    db, applicability_question: str, rerank_query: str, extra_queries: list[str]
+):
+    passages = await run_in_threadpool(retrieve_relevant_passages, rerank_query, extra_queries)
+    clauses = await expand_clauses(db, passages)
+    passages, clauses = await keep_applicable(applicability_question, passages, clauses)
+    return passages, clauses
+
+
+async def _stream_drafts_and_verify(
     system_prompt: str,
     history: list[ChatMessage],
     message: str,
     standalone_question: str,
     context_block: str,
     kb_map: str,
-) -> str | None:
-    """Generate (answer lane) and verify (fast lane). Vary the draft across
-    attempts so a transient verifier rejection can recover. Returns the answer on
-    a passing verdict, otherwise None."""
+) -> AsyncIterator[dict]:
+    """Stream up to DRAFT_ATTEMPTS drafts. Each draft is streamed live as
+    ``delta`` events; once complete it is verified (fast lane). On a passing
+    verdict we emit ``final`` and stop. If a draft fails, we emit ``reset`` so
+    the UI clears the unverified draft and try again. If all attempts fail we
+    emit an internal ``_failed`` marker (never sent to the client)."""
     for attempt in range(DRAFT_ATTEMPTS):
-        answer = await run_in_threadpool(
-            generate_answer, system_prompt, history, context_block, message, kb_map, attempt
-        )
+        if attempt > 0:
+            yield {"t": "reset"}
+            yield {"t": "status", "v": "Refining your answer…"}
+
+        draft = ""
+        async for token in generate_answer_stream(
+            system_prompt, history, context_block, message, kb_map, attempt
+        ):
+            draft += token
+            yield {"t": "delta", "v": token}
+
         verdict = await run_in_threadpool(
-            verify_answer, context_block, standalone_question, answer, kb_map
+            verify_answer, context_block, standalone_question, draft, kb_map
         )
         if verdict.passed:
-            return answer
-    return None
+            yield {"t": "final", "v": draft}
+            return
+
+    yield {"t": "_failed"}
 
 
-async def _retrieve_and_filter(
-    db, applicability_question: str, rerank_query: str, extra_queries: list[str]
-):
-    passages = await run_in_threadpool(retrieve_relevant_passages, rerank_query, extra_queries)
-    clauses = await expand_clauses(db, passages)
-    passages, clauses = await run_in_threadpool(
-        keep_applicable, applicability_question, passages, clauses
-    )
-    return passages, clauses
-
-
-async def produce_grounded_answer(
+async def stream_grounded_answer(
     db,
     history: list[ChatMessage],
     cross_session_context: str,
     system_prompt: str,
     message: str,
-) -> str:
+) -> AsyncIterator[dict]:
+    """Drive the grounded-answer pipeline, yielding UI events:
+
+      - {"t": "status", "v": ...} : a progress milestone
+      - {"t": "delta",  "v": ...} : a streamed token of the current draft
+      - {"t": "reset"}            : clear the current (unverified) draft
+      - {"t": "final",  "v": ...} : the verified answer (or abstention)
+
+    The verifier still gates what is committed: a draft that fails verification
+    is reset rather than left on screen, and the model gets a refined-retrieval
+    retry before abstaining.
+    """
     kb_map = await get_kb_outline(db)
 
     # Mechanical steps run on the fast, deterministic lane.
     fast_llm = build_fast_llm()
+    yield {"t": "status", "v": "Searching the policy library…"}
     standalone_question = await run_in_threadpool(
         condense_to_standalone_question, fast_llm, history, message
     )
@@ -121,16 +144,24 @@ async def produce_grounded_answer(
     )
     context_block = _build_context_block(passages, clauses, cross_session_context)
 
-    answer = await _draft_and_verify(
+    yield {"t": "status", "v": "Drafting your answer…"}
+    failed = False
+    async for event in _stream_drafts_and_verify(
         system_prompt, history, message, standalone_question, context_block, kb_map
-    )
-    if answer is not None:
-        return answer
+    ):
+        if event["t"] == "_failed":
+            failed = True
+            continue
+        yield event
+        if event["t"] == "final":
+            return
+    if not failed:
+        return
 
-    # Agentic re-retrieval: the first context did not yield a verifiable answer, so
-    # ask the fast model for a different, concept-focused query informed by what we
-    # already found, retrieve again, merge, and try once more. This rescues hard or
-    # awkwardly-worded questions instead of abstaining prematurely.
+    # Agentic re-retrieval: the first context did not yield a verifiable answer,
+    # so refine the query, retrieve again, merge, and try once more.
+    yield {"t": "reset"}
+    yield {"t": "status", "v": "Double-checking the sources…"}
     refined_query = await run_in_threadpool(
         build_refined_search_query, fast_llm, standalone_question, _found_labels(passages, clauses)
     )
@@ -142,10 +173,32 @@ async def produce_grounded_answer(
         clauses = _merge_clauses(clauses, more_clauses)
         context_block = _build_context_block(passages, clauses, cross_session_context)
 
-        answer = await _draft_and_verify(
+        yield {"t": "status", "v": "Drafting your answer…"}
+        async for event in _stream_drafts_and_verify(
             system_prompt, history, message, standalone_question, context_block, kb_map
-        )
-        if answer is not None:
-            return answer
+        ):
+            if event["t"] == "_failed":
+                continue
+            yield event
+            if event["t"] == "final":
+                return
 
-    return UNSURE_RESPONSE
+    yield {"t": "final", "v": UNSURE_RESPONSE}
+
+
+async def produce_grounded_answer(
+    db,
+    history: list[ChatMessage],
+    cross_session_context: str,
+    system_prompt: str,
+    message: str,
+) -> str:
+    """Non-streaming entry point (eval, smoke, ask). Drives the streaming
+    pipeline and returns only the final verified answer."""
+    final = UNSURE_RESPONSE
+    async for event in stream_grounded_answer(
+        db, history, cross_session_context, system_prompt, message
+    ):
+        if event["t"] == "final":
+            final = event["v"]
+    return final

@@ -38,3 +38,17 @@ Fix (prompt): for broad topics give a concise overview FIRST, then optionally on
 
 ### Reliability note — map legibility + retry seeds
 The KB map was rendered as one long semicolon line; the verifier intermittently failed to find real items in it (e.g. "Workplace Training Leave", §47), causing flaky Bug2 abstention. Fix: render the map one section per line. Also the generation retry now varies the LLM seed per attempt (a fixed-seed retry produced an identical draft, so retries were useless).
+
+## Phase 4 — Opus 4.8 upgrade + hybrid split + agentic retrieval + streaming
+
+Arif asked for the strongest model regardless of cost and a check that the architecture is still state-of-the-art. The core RAG design already matched the 2026 reference stack (hybrid dense+BM25, Anthropic-style contextual chunking, contextual BM25, Cohere rerank, query rewrite, grounding verifier, eval harness); the changes below add the model upgrade and the newer agentic pattern.
+
+1. **Answer model = Claude Opus 4.8**, via a provider-agnostic factory (`app/llm_factory.py`, `LLM_PROVIDER=anthropic`). Two integration gotchas: the pinned `llama-index-llms-anthropic==0.11.4` doesn't know Opus 4.8 (registered at runtime), and Opus 4.8 REJECTS the `temperature` parameter (adaptive thinking) — added to the no-temp list at runtime. Flip `LLM_PROVIDER=openai` to revert.
+
+2. **Hybrid model split.** Opus 4.8 writes only the user-facing answer; the mechanical steps (condense, query rewrite, applicability, verifier, ingest situating, summary) stay on fast, deterministic `gpt-4o-mini`. Why: running everything on Opus was ~60–110s/turn AND non-deterministic (Opus can't be seeded or set to temp 0), which undermined reproducible retrieval. The split restores seeded determinism on the retrieval-shaping steps and cut a clean turn to ~8–11s to first token.
+
+3. **Applicability filter reworked (this fixed a real bug the upgrade exposed).** The filter judged each conditional clause against its terse stored `condition` string in isolation. The stricter fast model (vs Opus) then DROPPED relevant clauses whose condition was merely descriptive — clause 1.5 tagged `'AIMS control system'` and clause 36.1 (Annual Leave Entitlement) tagged `'non-casual employees'` — causing false abstention. Fix (general): feed the judge the provision's section breadcrumb so cryptic conditions resolve from their heading, and flip the logic to KEEP-BY-DEFAULT, excluding only when a provision clearly belongs to a special/different scenario than the question (e.g. emergency-only for an ordinary day). Descriptive scoping no longer drops a relevant clause; Bug1 protection still holds. The per-condition checks now run concurrently (latency win).
+
+4. **Agentic re-retrieval.** When no draft passes verification, the fast model proposes a refined, concept-focused query informed by what was already found, re-retrieves, merges, and retries once before abstaining.
+
+5. **Real streaming.** `/chat` emits newline-delimited JSON frames (`status`/`delta`/`reset`/`final`). Status milestones appear immediately, the Opus answer streams live, and the verifier still GATES output — an unverified draft that fails verification is reset and replaced, so users never keep an unverified answer. Frontend adapter (`frontend/app/assistant.tsx`) parses the frames.

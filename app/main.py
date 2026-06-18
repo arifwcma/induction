@@ -1,3 +1,4 @@
+import json
 import uuid
 from contextlib import asynccontextmanager
 
@@ -42,8 +43,8 @@ from app.config import get_settings
 from app.config_store import ensure_prompt_seeded, get_system_prompt, update_system_prompt
 from app.db import async_session_maker, create_db_and_tables
 from app.models import User
-from app.rag.chat import DEFAULT_SYSTEM_PROMPT, stream_in_pieces, summarise_conversation
-from app.rag.pipeline import produce_grounded_answer
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, summarise_conversation
+from app.rag.pipeline import stream_grounded_answer
 from app.schemas import UserCreate, UserRead, UserUpdate
 
 
@@ -118,12 +119,13 @@ async def chat(request: ChatRequest, user: User = Depends(current_active_user)):
             )
             system_prompt = await get_system_prompt(db, DEFAULT_SYSTEM_PROMPT)
 
-            answer_text = await produce_grounded_answer(
+            answer_text = ""
+            async for event in stream_grounded_answer(
                 db, history, cross_session_context, system_prompt, request.message
-            )
-
-            for piece in stream_in_pieces(answer_text):
-                yield piece
+            ):
+                if event["t"] == "final":
+                    answer_text = event["v"]
+                yield json.dumps(event) + "\n"
 
             await persist_turn(db, chat_session.id, request.message, answer_text)
 
@@ -134,7 +136,7 @@ async def chat(request: ChatRequest, user: User = Depends(current_active_user)):
             new_summary = await run_in_threadpool(summarise_conversation, updated_history)
             await set_session_summary(db, chat_session.id, new_summary)
 
-    return StreamingResponse(stream_and_persist(), media_type="text/plain")
+    return StreamingResponse(stream_and_persist(), media_type="application/x-ndjson")
 
 
 @app.get("/sessions")

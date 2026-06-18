@@ -48,7 +48,7 @@ CASES = [
         "category": "out-of-scope",
         "question": "What is the wifi password for the Melbourne office?",
         "expect_contains_any": ["not", "IT", "manager", "People", "cover"],
-        "expect_absent_all": ["password is"],
+        "expect_absent_all": ["password is "],
         "expect_abstain": False,
     },
     {

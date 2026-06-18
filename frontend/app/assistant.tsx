@@ -67,16 +67,64 @@ function createBackendAdapter(sessionId: string, onTurnComplete: () => void): Ch
       }
 
       const decoder = new TextDecoder();
+      let buffer = "";
       let answer = "";
+      let status = "";
+
+      // The display shows the streamed answer once it starts; until then it
+      // shows the current progress status (in muted italics).
+      const display = () => (answer ? answer : status ? `*${status}*` : "");
+
+      const handleFrame = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return;
+        }
+        let frame: { t: string; v?: string };
+        try {
+          frame = JSON.parse(trimmed);
+        } catch {
+          // Tolerate any non-JSON line by treating it as answer text.
+          answer += trimmed;
+          return;
+        }
+        switch (frame.t) {
+          case "status":
+            status = frame.v ?? "";
+            break;
+          case "delta":
+            answer += frame.v ?? "";
+            status = "";
+            break;
+          case "reset":
+            answer = "";
+            break;
+          case "final":
+            answer = frame.v ?? answer;
+            status = "";
+            break;
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
           break;
         }
-        answer += decoder.decode(value, { stream: true });
-        yield { content: [{ type: "text", text: answer }] };
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          handleFrame(line);
+        }
+        yield { content: [{ type: "text", text: display() }] };
       }
+
+      if (buffer.trim()) {
+        handleFrame(buffer);
+      }
+      yield { content: [{ type: "text", text: display() }] };
 
       onTurnComplete();
     },

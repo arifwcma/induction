@@ -108,6 +108,13 @@ Phase 3 (emergency-work questions + conversational polish; requires re-ingest):
 
 Acceptance: `app.eval_harness` 9/9 (incl. Bug1 ordinary-day AND Issue#1 emergency-work meal break); `app.smoke` Cases 1–6 in `.cursor/smokecases.md` clean (Issue#1 measured 6/6 correct). Re-ingest ~385 chunks / ~368 clauses. Bugs/Issues documented in `.cursor/project.md`. Deploy per `deploy/README.md` — Phase 3 changed ingestion, so a re-ingest is MANDATORY (`hard_update.sh`).
 
+Phase 4 (model upgrade + hybrid split + agentic retrieval + streaming; NO re-ingest):
+- Answer model upgraded to **Claude Opus 4.8** via a provider-agnostic factory (`app/llm_factory.py`, `LLM_PROVIDER=anthropic`). Opus 4.8 quirks handled at runtime (unknown to the pinned package; rejects `temperature`).
+- Hybrid split: Opus 4.8 answers; `gpt-4o-mini` runs condense/query-rewrite/applicability/verifier/situating/summary. Keeps retrieval seeded/deterministic and cuts a clean turn to ~8–11s to first token.
+- Applicability filter reworked to keep-by-default + breadcrumb context + concurrent checks — fixed false drops (clause 1.5, clause 36.1) the stricter fast model exposed.
+- Agentic re-retrieval: refine query + re-retrieve + retry once before abstaining.
+- Real streaming: `/chat` now emits newline-delimited JSON frames (`status`/`delta`/`reset`/`final`); the verifier still gates (unverified draft is reset/replaced). New deps: `llama-index-llms-anthropic==0.11.4`. New env: `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_CHAT_MODEL`, `FAST_LLM_PROVIDER`, `FAST_CHAT_MODEL`. Deploy = `update.sh` (no ingestion change). Eval 9/9 on Opus 4.8.
+
 ### New backend endpoints (for the frontend to consume)
 - Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.
 - Chat (login required): `POST /chat` (stream); `GET /sessions`; `GET /sessions/{id}/messages`.
@@ -123,7 +130,7 @@ Acceptance: `app.eval_harness` 9/9 (incl. Bug1 ordinary-day AND Issue#1 emergenc
 ---
 
 ## Stack (M1 target)
-1. LLM: OpenAI `gpt-4o-mini` default, `gpt-4o` fallback for hard governing-clause reasoning. Embeddings `text-embedding-3-small`.
+1. LLMs (provider-agnostic, two lanes — `app/llm_factory.py`): answer lane = Claude Opus 4.8 (`LLM_PROVIDER=anthropic`); fast lane = `gpt-4o-mini` for all mechanical steps. Embeddings `text-embedding-3-small`.
 2. RAG: LlamaIndex. Vector store: Qdrant (`induction_documents`).
 3. Reranker: Cohere Rerank.
 4. Relational DB: PostgreSQL (new).

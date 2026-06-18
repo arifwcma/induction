@@ -1,3 +1,7 @@
+import asyncio
+
+from starlette.concurrency import run_in_threadpool
+
 from app.models import Clause
 from app.rag.chat import build_fast_llm
 from app.rag.retrieval import Passage
@@ -25,47 +29,63 @@ APPLICABILITY_PROMPT = (
 )
 
 
-def condition_applies(
-    llm, question: str, condition: str, breadcrumb: str, cache: dict[str, bool]
-) -> bool:
-    key = f"{breadcrumb.strip().lower()}||{condition.strip().lower()}"
-    if not condition.strip():
-        return True
-    if key in cache:
-        return cache[key]
+def _cache_key(condition: str, breadcrumb: str) -> str:
+    return f"{breadcrumb.strip().lower()}||{condition.strip().lower()}"
+
+
+def _judge_condition(llm, question: str, condition: str, breadcrumb: str) -> bool:
     prompt = APPLICABILITY_PROMPT.format(
         question=question, breadcrumb=breadcrumb or "(unspecified)", condition=condition
     )
     verdict = llm.complete(prompt).text.strip().lower()
-    applies = verdict.startswith("yes")
-    cache[key] = applies
-    return applies
+    return verdict.startswith("yes")
 
 
-def keep_applicable(question: str, passages: list[Passage], clauses: list[Clause]):
-    llm = build_fast_llm()
-    cache: dict[str, bool] = {}
-
-    kept_passages = []
+def _conditional_items(passages: list[Passage], clauses: list[Clause]):
+    """Yield (condition, breadcrumb) for every conditional passage/clause."""
     for passage in passages:
-        if passage.metadata.get("scope") != "conditional":
-            kept_passages.append(passage)
-            continue
-        if condition_applies(
-            llm,
-            question,
-            passage.metadata.get("condition", ""),
-            passage.metadata.get("breadcrumb", ""),
-            cache,
-        ):
-            kept_passages.append(passage)
-
-    kept_clauses = []
+        if passage.metadata.get("scope") == "conditional":
+            yield passage.metadata.get("condition", ""), passage.metadata.get("breadcrumb", "")
     for clause in clauses:
-        if clause.scope != "conditional":
-            kept_clauses.append(clause)
-            continue
-        if condition_applies(llm, question, clause.condition, clause.breadcrumb, cache):
-            kept_clauses.append(clause)
+        if clause.scope == "conditional":
+            yield clause.condition, clause.breadcrumb
 
+
+async def keep_applicable(question: str, passages: list[Passage], clauses: list[Clause]):
+    """Drop conditional provisions that belong to a different scenario than the
+    question. The per-condition judgments are independent, so they run
+    concurrently (one fast-lane call per *unique* condition) instead of in series."""
+    llm = build_fast_llm()
+
+    # Collect the unique conditions that need a judgment.
+    unique: dict[str, tuple[str, str]] = {}
+    for condition, breadcrumb in _conditional_items(passages, clauses):
+        if condition.strip():
+            unique.setdefault(_cache_key(condition, breadcrumb), (condition, breadcrumb))
+
+    async def judge(key: str, condition: str, breadcrumb: str) -> tuple[str, bool]:
+        applies = await run_in_threadpool(_judge_condition, llm, question, condition, breadcrumb)
+        return key, applies
+
+    results = await asyncio.gather(
+        *(judge(key, condition, breadcrumb) for key, (condition, breadcrumb) in unique.items())
+    )
+    cache: dict[str, bool] = dict(results)
+
+    def applies(condition: str, breadcrumb: str) -> bool:
+        if not condition.strip():
+            return True
+        return cache.get(_cache_key(condition, breadcrumb), True)
+
+    kept_passages = [
+        passage
+        for passage in passages
+        if passage.metadata.get("scope") != "conditional"
+        or applies(passage.metadata.get("condition", ""), passage.metadata.get("breadcrumb", ""))
+    ]
+    kept_clauses = [
+        clause
+        for clause in clauses
+        if clause.scope != "conditional" or applies(clause.condition, clause.breadcrumb)
+    ]
     return kept_passages, kept_clauses
