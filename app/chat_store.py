@@ -1,7 +1,7 @@
 import uuid
 
 from llama_index.core.llms import ChatMessage, MessageRole
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ChatMessageRecord, ChatSession
@@ -109,6 +109,24 @@ async def get_owned_session(
         ChatSession.client_key == client_key,
     )
     return (await db.execute(query)).scalar_one_or_none()
+
+
+async def delete_owned_session(
+    db: AsyncSession, user_id: uuid.UUID, client_key: str
+) -> bool:
+    """Delete a session (and its messages) if it belongs to the user.
+
+    Returns True if a session was found and deleted, False otherwise. There is no
+    DB-level cascade, so the message rows are removed explicitly first."""
+    chat_session = await get_owned_session(db, user_id, client_key)
+    if chat_session is None:
+        return False
+    await db.execute(
+        delete(ChatMessageRecord).where(ChatMessageRecord.session_id == chat_session.id)
+    )
+    await db.delete(chat_session)
+    await db.commit()
+    return True
 
 
 async def session_message_payload(db: AsyncSession, session_id: uuid.UUID) -> list[dict]:

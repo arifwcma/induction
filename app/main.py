@@ -31,6 +31,7 @@ password_helper = PasswordHelper()
 ALLOWED_ROLES = {ROLE_BASIC, ROLE_TRAINER, ROLE_ADMIN}
 from app.chat_store import (
     build_cross_session_context,
+    delete_owned_session,
     get_or_create_session,
     get_owned_session,
     list_user_sessions,
@@ -160,6 +161,14 @@ async def get_session_messages(session_id: str, user: User = Depends(current_act
         if chat_session is None:
             raise HTTPException(status_code=404, detail="Session not found.")
         return await session_message_payload(db, chat_session.id)
+
+
+@app.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(session_id: str, user: User = Depends(current_active_user)):
+    async with async_session_maker() as db:
+        deleted = await delete_owned_session(db, user.id, session_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Session not found.")
 
 
 class PromptUpdate(BaseModel):

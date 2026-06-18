@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { TrainerProvider } from "@/lib/trainer-context";
 import {
   API_URL,
+  deleteSession,
   fetchCurrentUser,
   getSessionMessages,
   listSessions,
@@ -69,11 +71,30 @@ function createBackendAdapter(sessionId: string, onTurnComplete: () => void): Ch
       const decoder = new TextDecoder();
       let buffer = "";
       let answer = "";
-      let status = "";
+      let liveDraft = "";
+      const steps: string[] = [];
 
-      // The display shows the streamed answer once it starts; until then it
-      // shows the current progress status (in muted italics).
-      const display = () => (answer ? answer : status ? `*${status}*` : "");
+      // The "thinking" trace (progress steps + the current unverified draft) is
+      // shown in the muted, collapsible reasoning area; only the verified answer
+      // lands in the normal-weight text part. A draft that fails verification is
+      // dropped from the live trace rather than mistaken for the final answer.
+      const thinking = () => {
+        const trace = [...steps];
+        if (liveDraft) {
+          trace.push(liveDraft);
+        }
+        return trace.join("\n\n");
+      };
+
+      const display = () => {
+        const parts: { type: "reasoning" | "text"; text: string }[] = [];
+        const trace = thinking();
+        if (trace) {
+          parts.push({ type: "reasoning", text: trace });
+        }
+        parts.push({ type: "text", text: answer });
+        return parts;
+      };
 
       const handleFrame = (line: string) => {
         const trimmed = line.trim();
@@ -90,18 +111,20 @@ function createBackendAdapter(sessionId: string, onTurnComplete: () => void): Ch
         }
         switch (frame.t) {
           case "status":
-            status = frame.v ?? "";
+            if (frame.v && steps[steps.length - 1] !== frame.v) {
+              steps.push(frame.v);
+            }
+            liveDraft = "";
             break;
           case "delta":
-            answer += frame.v ?? "";
-            status = "";
+            liveDraft += frame.v ?? "";
             break;
           case "reset":
-            answer = "";
+            liveDraft = "";
             break;
           case "final":
             answer = frame.v ?? answer;
-            status = "";
+            liveDraft = "";
             break;
         }
       };
@@ -118,13 +141,13 @@ function createBackendAdapter(sessionId: string, onTurnComplete: () => void): Ch
           buffer = buffer.slice(newlineIndex + 1);
           handleFrame(line);
         }
-        yield { content: [{ type: "text", text: display() }] };
+        yield { content: display() };
       }
 
       if (buffer.trim()) {
         handleFrame(buffer);
       }
-      yield { content: [{ type: "text", text: display() }] };
+      yield { content: display() };
 
       onTurnComplete();
     },
@@ -192,6 +215,21 @@ export const Assistant = () => {
     setSessionId(crypto.randomUUID());
   }
 
+  async function handleDeleteSession(targetId: string) {
+    if (!window.confirm("Delete this chat? This can't be undone.")) {
+      return;
+    }
+    try {
+      await deleteSession(targetId);
+    } catch {
+      // The refresh below will reflect the real server state either way.
+    }
+    if (targetId === sessionId) {
+      startNewChat();
+    }
+    await refreshSessions();
+  }
+
   async function handleLogout() {
     await logout();
     router.replace("/login");
@@ -237,16 +275,29 @@ export const Assistant = () => {
           </div>
           <nav className="flex-1 overflow-y-auto px-2">
             {sessions.map((session) => (
-              <button
+              <div
                 key={session.session_id}
-                type="button"
-                onClick={() => openSession(session.session_id)}
-                className="mb-1 w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-muted aria-[current=true]:bg-muted"
+                className="group relative mb-1 flex items-center rounded-md hover:bg-muted aria-[current=true]:bg-muted"
                 aria-current={session.session_id === sessionId}
-                title={session.title}
               >
-                {session.title}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => openSession(session.session_id)}
+                  className="min-w-0 flex-1 truncate px-3 py-2 text-left text-sm"
+                  title={session.title}
+                >
+                  {session.title}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete chat"
+                  title="Delete chat"
+                  onClick={() => handleDeleteSession(session.session_id)}
+                  className="mr-1 hidden shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-background hover:text-destructive group-hover:block"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
             ))}
           </nav>
           {canTrain && (

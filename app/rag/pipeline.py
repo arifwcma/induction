@@ -89,12 +89,32 @@ async def _filter_applicable(
     return passages, clauses
 
 
-async def _retrieve_and_filter(
-    db, applicability_questions: list[str], rerank_query: str, extra_queries: list[str]
-):
-    passages = await run_in_threadpool(retrieve_relevant_passages, rerank_query, extra_queries)
+async def _retrieve_passages(rerank_query: str, extra_queries: list[str]) -> list[Passage]:
+    return await run_in_threadpool(retrieve_relevant_passages, rerank_query, extra_queries)
+
+
+async def _gather_for_subquestions(fast_llm, sub_questions: list[str]) -> list[Passage]:
+    """Retrieve once PER sub-question - each reranked against its OWN intent - and
+    union the passages.
+
+    A blended compound query lets the dominant intent crowd the others out of the
+    reranked top-K: e.g. an emergency sub-question floods the pool with Appendix C
+    passages and EVICTS the ordinary-day meal-break clause (23.2), so the answer
+    can no longer be grounded. Retrieving per sub-question and unioning keeps the
+    best passages for EVERY intent. For a single-intent question this is just one
+    retrieval, so behaviour is unchanged."""
+    merged: list[Passage] = []
+    for sub in sub_questions:
+        search_query = await run_in_threadpool(build_search_query, fast_llm, sub)
+        passages = await _retrieve_passages(sub, [search_query])
+        merged = _merge_passages(merged, passages)
+    return merged
+
+
+async def _retrieve_and_filter(db, fast_llm, sub_questions: list[str]):
+    passages = await _gather_for_subquestions(fast_llm, sub_questions)
     clauses = await expand_clauses(db, passages)
-    return await _filter_applicable(applicability_questions, passages, clauses)
+    return await _filter_applicable(sub_questions, passages, clauses)
 
 
 async def _stream_drafts_and_verify(
@@ -158,12 +178,9 @@ async def stream_grounded_answer(
     standalone_question = await run_in_threadpool(
         condense_to_standalone_question, fast_llm, history, message
     )
-    search_query = await run_in_threadpool(build_search_query, fast_llm, standalone_question)
     sub_questions = await run_in_threadpool(split_into_questions, fast_llm, standalone_question)
 
-    passages, clauses = await _retrieve_and_filter(
-        db, sub_questions, standalone_question, [search_query, *sub_questions]
-    )
+    passages, clauses = await _retrieve_and_filter(db, fast_llm, sub_questions)
     context_block = _build_context_block(passages, clauses, cross_session_context)
 
     yield {"t": "status", "v": "Drafting your answer…"}
@@ -188,8 +205,10 @@ async def stream_grounded_answer(
         build_refined_search_query, fast_llm, standalone_question, _found_labels(passages, clauses)
     )
     if refined_query:
-        more_passages, more_clauses = await _retrieve_and_filter(
-            db, sub_questions, refined_query, [search_query, *sub_questions]
+        more_passages = await _retrieve_passages(refined_query, [refined_query])
+        more_clauses = await expand_clauses(db, more_passages)
+        more_passages, more_clauses = await _filter_applicable(
+            sub_questions, more_passages, more_clauses
         )
         passages = _merge_passages(passages, more_passages)
         clauses = _merge_clauses(clauses, more_clauses)

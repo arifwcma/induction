@@ -99,6 +99,10 @@ export async function getSessionMessages(sessionId: string): Promise<StoredMessa
   return request(`/sessions/${encodeURIComponent(sessionId)}/messages`);
 }
 
+export async function deleteSession(sessionId: string): Promise<void> {
+  await request(`/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+}
+
 export async function addTextToKB(content: string): Promise<void> {
   await request("/kb/text", {
     method: "POST",
