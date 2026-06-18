@@ -98,6 +98,21 @@ CASES = [
         "expect_contains_any": ["annual leave", "accru", "36"],
         "expect_abstain": False,
     },
+    {
+        "name": "compound question: ordinary-day AND emergency meal break in one turn (both answered)",
+        "category": "scope",
+        "question": (
+            "say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. "
+            "will the lunch counted as worked hours or non worked hours? "
+            "also what would be the case during emergency work."
+        ),
+        "expect_contains_all_groups": [
+            ["non-worked", "non worked", "unpaid", "not count", "23.2"],
+            ["counted as time worked", "time worked", "1.5", "paid"],
+        ],
+        "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
+    },
 ]
 
 
@@ -120,6 +135,10 @@ def evaluate(case: dict, answer: str) -> tuple[bool, str]:
     contains_any = case.get("expect_contains_any", [])
     if contains_any and not any(term.lower() in lowered for term in contains_any):
         return False, f"missing any of {contains_any}"
+
+    for group in case.get("expect_contains_all_groups", []):
+        if not any(term.lower() in lowered for term in group):
+            return False, f"missing all of {group}"
 
     return True, "ok"
 

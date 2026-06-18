@@ -179,6 +179,31 @@ def build_search_query(llm: LLM, question: str) -> str:
     return llm.complete(prompt).text.strip()
 
 
+SPLIT_INSTRUCTION = (
+    "An employee asked the question below. A single message sometimes bundles SEVERAL distinct "
+    "sub-questions - for example an ordinary-situation question AND a 'what about during X' "
+    "question, where X is a special situation such as emergency work, being a casual, or probation.\n\n"
+    "Break the message into the distinct sub-questions it genuinely contains. Rules:\n"
+    "- If it asks only ONE thing, return that one question unchanged.\n"
+    "- Make every sub-question SELF-CONTAINED: carry the shared topic and scenario into each one so it "
+    "stands on its own (e.g. 'During emergency work, does the meal break count as worked hours?' "
+    "rather than just 'what about emergency work?').\n"
+    "- Do NOT invent sub-questions that were not asked; preserve the employee's meaning.\n"
+    "- Return ONE sub-question per line, no numbering, no preamble.\n\n"
+    "Question:\n{question}\n\nSub-questions:"
+)
+
+
+def split_into_questions(llm: LLM, question: str) -> list[str]:
+    prompt = SPLIT_INSTRUCTION.format(question=question)
+    raw = llm.complete(prompt).text.strip()
+    parts = [line.strip(" -*\u2022\t") for line in raw.splitlines()]
+    parts = [part for part in parts if part]
+    if not parts:
+        return [question]
+    return parts[:4]
+
+
 REFINE_QUERY_INSTRUCTION = (
     "You are improving a document search for an internal policy assistant.\n\n"
     "Original question:\n{question}\n\n"

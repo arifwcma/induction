@@ -13,6 +13,7 @@ from app.rag.chat import (
     condense_to_standalone_question,
     format_context,
     generate_answer_stream,
+    split_into_questions,
     verify_answer,
 )
 from app.rag.applicability import keep_applicable
@@ -67,13 +68,33 @@ def _build_context_block(
     return context_block
 
 
+async def _filter_applicable(
+    applicability_questions: list[str], passages: list[Passage], clauses: list[Clause]
+):
+    """Run the applicability gate once PER sub-question and UNION the survivors.
+
+    A single compound message can ask about both an ordinary situation and a
+    special one (e.g. emergency work). Judging the blended question once makes
+    the filter drop whichever scenario is not dominant; judging each sub-question
+    separately keeps the provisions each part needs, while a purely ordinary
+    question still drops conditional provisions (Bug1 stays fixed)."""
+    keep_passage_keys: set = set()
+    keep_clause_ids: set = set()
+    for question in applicability_questions:
+        kept_passages, kept_clauses = await keep_applicable(question, passages, clauses)
+        keep_passage_keys.update(dedup_key(p) for p in kept_passages)
+        keep_clause_ids.update(c.id for c in kept_clauses)
+    passages = [p for p in passages if dedup_key(p) in keep_passage_keys]
+    clauses = [c for c in clauses if c.id in keep_clause_ids]
+    return passages, clauses
+
+
 async def _retrieve_and_filter(
-    db, applicability_question: str, rerank_query: str, extra_queries: list[str]
+    db, applicability_questions: list[str], rerank_query: str, extra_queries: list[str]
 ):
     passages = await run_in_threadpool(retrieve_relevant_passages, rerank_query, extra_queries)
     clauses = await expand_clauses(db, passages)
-    passages, clauses = await keep_applicable(applicability_question, passages, clauses)
-    return passages, clauses
+    return await _filter_applicable(applicability_questions, passages, clauses)
 
 
 async def _stream_drafts_and_verify(
@@ -138,9 +159,10 @@ async def stream_grounded_answer(
         condense_to_standalone_question, fast_llm, history, message
     )
     search_query = await run_in_threadpool(build_search_query, fast_llm, standalone_question)
+    sub_questions = await run_in_threadpool(split_into_questions, fast_llm, standalone_question)
 
     passages, clauses = await _retrieve_and_filter(
-        db, standalone_question, standalone_question, [search_query]
+        db, sub_questions, standalone_question, [search_query, *sub_questions]
     )
     context_block = _build_context_block(passages, clauses, cross_session_context)
 
@@ -167,7 +189,7 @@ async def stream_grounded_answer(
     )
     if refined_query:
         more_passages, more_clauses = await _retrieve_and_filter(
-            db, standalone_question, refined_query, [search_query, standalone_question]
+            db, sub_questions, refined_query, [search_query, *sub_questions]
         )
         passages = _merge_passages(passages, more_passages)
         clauses = _merge_clauses(clauses, more_clauses)

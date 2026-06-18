@@ -44,6 +44,14 @@ CASE_5 = [
 # Issue#3: broad open topic should get a short overview first, not only a clarifier.
 CASE_6 = ["lets talk about leaves"]
 
+# Compound single-turn: ordinary-day meal break AND emergency work in one message.
+# Both parts must be answered (emergency meal = counted as time worked, clause 1.5).
+CASE_7 = [
+    "say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. "
+    "will the lunch counted as worked hours or non worked hours? "
+    "also what would be the case during emergency work."
+]
+
 
 def looks_like_abstention(answer: str) -> bool:
     return answer.strip() == UNSURE_RESPONSE.strip()
@@ -83,6 +91,9 @@ async def run_smoke_cases():
 
         print("================ CASE 6 (Issue#3: broad topic overview first) ================\n")
         await run_conversation(db, None, CASE_6)
+
+        print("================ CASE 7 (compound: ordinary + emergency in one turn) ================\n")
+        await run_conversation(db, None, CASE_7)
 
 
 if __name__ == "__main__":
