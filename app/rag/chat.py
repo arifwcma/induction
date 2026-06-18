@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 
-from llama_index.core.llms import ChatMessage, MessageRole
-from llama_index.llms.openai import OpenAI
+from llama_index.core.llms import LLM, ChatMessage, MessageRole
 
-from app.config import get_settings
+from app.llm_factory import make_llm
 from app.models import Clause
 from app.rag.retrieval import Passage
 
@@ -149,17 +148,15 @@ class VerifierVerdict:
     reason: str
 
 
-FIXED_SEED = 7
+def build_llm(attempt: int = 0) -> LLM:
+    """Answer-lane LLM (the strong model, e.g. Opus 4.8) for user-facing answers."""
+    return make_llm(attempt=attempt)
 
 
-def build_llm(seed: int = FIXED_SEED) -> OpenAI:
-    settings = get_settings()
-    return OpenAI(
-        model=settings.openai_chat_model,
-        api_key=settings.openai_api_key,
-        temperature=0,
-        additional_kwargs={"seed": seed},
-    )
+def build_fast_llm() -> LLM:
+    """Fast, deterministic lane for mechanical steps (condense, query rewrite,
+    applicability, verification)."""
+    return make_llm(fast=True)
 
 
 def format_transcript(history: list[ChatMessage]) -> str:
@@ -170,15 +167,32 @@ def format_transcript(history: list[ChatMessage]) -> str:
     return "\n".join(lines)
 
 
-def condense_to_standalone_question(llm: OpenAI, history: list[ChatMessage], message: str) -> str:
+def condense_to_standalone_question(llm: LLM, history: list[ChatMessage], message: str) -> str:
     if not history:
         return message
     prompt = CONDENSE_INSTRUCTION.format(transcript=format_transcript(history), message=message)
     return llm.complete(prompt).text.strip()
 
 
-def build_search_query(llm: OpenAI, question: str) -> str:
+def build_search_query(llm: LLM, question: str) -> str:
     prompt = SEARCH_QUERY_INSTRUCTION.format(question=question)
+    return llm.complete(prompt).text.strip()
+
+
+REFINE_QUERY_INSTRUCTION = (
+    "You are improving a document search for an internal policy assistant.\n\n"
+    "Original question:\n{question}\n\n"
+    "A first search returned these sections, but they did NOT let us answer the question "
+    "(either the answer was missing or could not be verified):\n{found}\n\n"
+    "Write ONE different, concept-focused search query that is likely to surface the missing "
+    "information. Use synonyms and the underlying policy concepts rather than the user's wording, "
+    "and avoid simply repeating the sections already found. Reply with the query only, one line."
+)
+
+
+def build_refined_search_query(llm: LLM, question: str, found_labels: list[str]) -> str:
+    found = "\n".join(f"  - {label}" for label in found_labels) or "  - (nothing relevant)"
+    prompt = REFINE_QUERY_INSTRUCTION.format(question=question, found=found)
     return llm.complete(prompt).text.strip()
 
 
@@ -226,9 +240,9 @@ def generate_answer(
     context_block: str,
     message: str,
     kb_map: str = "",
-    seed: int = FIXED_SEED,
+    attempt: int = 0,
 ) -> str:
-    llm = build_llm(seed)
+    llm = build_llm(attempt)
     messages = [ChatMessage(role=MessageRole.SYSTEM, content=system_prompt)]
     if kb_map:
         messages.append(
@@ -251,7 +265,7 @@ def generate_answer(
 
 
 def verify_answer(context_block: str, question: str, answer: str, kb_map: str = "") -> VerifierVerdict:
-    llm = build_llm()
+    llm = build_fast_llm()
     prompt = VERIFIER_INSTRUCTION.format(
         kb_map=kb_map or "(none)", context=context_block, question=question, answer=answer
     )
@@ -269,7 +283,7 @@ def stream_in_pieces(text: str):
 def summarise_conversation(history: list[ChatMessage]) -> str:
     if not history:
         return ""
-    llm = build_llm()
+    llm = build_fast_llm()
     prompt = (
         "Summarise the following conversation in two or three sentences, capturing what the employee "
         "asked about and any personal context they shared. Do not add anything not said.\n\n"

@@ -7,9 +7,16 @@ class Settings(BaseSettings):
     app_name: str = "Wimmera CMA Induction Chatbot"
     environment: str = "development"
 
+    llm_provider: str = "openai"
+    fast_llm_provider: str = "openai"
+    fast_chat_model: str = "gpt-4o-mini"
+
     openai_api_key: str = ""
     openai_chat_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+
+    anthropic_api_key: str = ""
+    anthropic_chat_model: str = "claude-opus-4-8"
 
     cohere_api_key: str = ""
     cohere_rerank_model: str = "rerank-english-v3.0"

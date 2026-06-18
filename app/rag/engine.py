@@ -1,18 +1,15 @@
 import qdrant_client
 from llama_index.core import Settings as LlamaSettings
 from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.llms.openai import OpenAI
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 
 from app.config import get_settings
+from app.llm_factory import make_llm
 
 
 def configure_models():
     settings = get_settings()
-    LlamaSettings.llm = OpenAI(
-        model=settings.openai_chat_model,
-        api_key=settings.openai_api_key,
-    )
+    LlamaSettings.llm = make_llm()
     LlamaSettings.embed_model = OpenAIEmbedding(
         model=settings.openai_embedding_model,
         api_key=settings.openai_api_key,

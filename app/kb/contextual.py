@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
+from llama_index.core.llms import LLM
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.llms.openai import OpenAI
 
-from app.config import get_settings
+from app.llm_factory import make_llm
 from app.kb.parse import ClauseUnit
 
 
@@ -44,9 +44,8 @@ class ContextualChunk:
     metadata: dict
 
 
-def build_situating_llm() -> OpenAI:
-    settings = get_settings()
-    return OpenAI(model=settings.openai_chat_model, api_key=settings.openai_api_key, max_tokens=180)
+def build_situating_llm() -> LLM:
+    return make_llm(fast=True, max_tokens=180)
 
 
 def parse_situating_output(output: str) -> SituatingResult:
@@ -73,7 +72,7 @@ def parse_situating_output(output: str) -> SituatingResult:
     )
 
 
-def situate_unit(llm: OpenAI, unit: ClauseUnit) -> SituatingResult:
+def situate_unit(llm: LLM, unit: ClauseUnit) -> SituatingResult:
     prompt = SITUATING_PROMPT.format(
         document=unit.source,
         breadcrumb=unit.breadcrumb(),
