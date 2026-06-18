@@ -52,6 +52,14 @@ CASE_7 = [
     "also what would be the case during emergency work."
 ]
 
+# Case#8: single-intent EMERGENCY scenario (the inverse framing of Case#3). The
+# answer must be that the meal break IS counted as worked time (clause 1.5), NOT
+# the ordinary-day "unpaid/non-worked" rule.
+CASE_8 = [
+    "say during an emergency work, i worked between 8 AM - 4 PM, with lunch "
+    "between 12-12:30 pm. will the lunch counted as worked hours or non worked hours?"
+]
+
 
 def looks_like_abstention(answer: str) -> bool:
     return answer.strip() == UNSURE_RESPONSE.strip()
@@ -94,6 +102,9 @@ async def run_smoke_cases():
 
         print("================ CASE 7 (compound: ordinary + emergency in one turn) ================\n")
         await run_conversation(db, None, CASE_7)
+
+        print("================ CASE 8 (single-intent emergency: meal = worked time) ================\n")
+        await run_conversation(db, None, CASE_8)
 
 
 if __name__ == "__main__":

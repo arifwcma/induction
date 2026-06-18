@@ -38,6 +38,19 @@ def _ensure_anthropic_model_registered(model: str) -> None:
         anthropic_base.ANTHROPIC_NO_TEMP_MODELS = (*no_temp, model)
 
 
+def _min_reasoning_effort(model: str) -> str | None:
+    """Lowest reasoning-effort value the given GPT-5 model accepts.
+
+    The original 5.0 family (gpt-5, gpt-5-mini, gpt-5-nano) accepts "minimal";
+    the 5.1+ families (gpt-5.4-mini, etc.) renamed that tier to "none". Anything
+    that is not a GPT-5 reasoning model returns None (no effort param)."""
+    if model.startswith("gpt-5."):
+        return "none"
+    if model.startswith("gpt-5"):
+        return "minimal"
+    return None
+
+
 def _resolve_provider_and_model(settings, fast: bool) -> tuple[str, str]:
     """Pick (provider, model) for the requested lane.
 
@@ -82,11 +95,13 @@ def make_llm(*, fast: bool = False, max_tokens: int | None = None, attempt: int 
     from llama_index.llms.openai import OpenAI
 
     extra: dict = {"seed": FIXED_SEED + attempt * 101}
-    # GPT-5 models are reasoning models: keep effort minimal so the mechanical
+    # GPT-5 models are reasoning models: use the lowest effort so the mechanical
     # fast-lane steps (condense, query rewrite, applicability, verify) stay cheap
     # and low-latency rather than burning reasoning tokens on yes/no judgements.
-    if model.startswith("gpt-5"):
-        extra["reasoning_effort"] = "minimal"
+    # The 5.0 family calls the lowest tier "minimal"; 5.1+ renamed it to "none".
+    low_effort = _min_reasoning_effort(model)
+    if low_effort:
+        extra["reasoning_effort"] = low_effort
     kwargs: dict = {
         "model": model,
         "api_key": settings.openai_api_key,
