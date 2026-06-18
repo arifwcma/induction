@@ -99,6 +99,18 @@ CASES = [
         "expect_abstain": False,
     },
     {
+        "name": "conversational recap ('what were we talking about') answered from history, not abstained",
+        "category": "meta",
+        "history": [
+            ("user", "How is annual leave accrued under the enterprise agreement?"),
+            ("assistant", "Annual leave accrues on an hourly basis, recorded in total hours (clause 36.1.2)."),
+        ],
+        "question": "what were we talking about?",
+        "expect_contains_any": ["annual leave", "leave", "accru"],
+        "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
+    },
+    {
         "name": "compound question: ordinary-day AND emergency meal break in one turn (both answered)",
         "category": "scope",
         "question": (

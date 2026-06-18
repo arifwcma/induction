@@ -49,3 +49,8 @@ Q3: lets gor for the short tour you talked about
 Case#11 (Short tour lazy way)
 
 Q1: short tour
+
+Case#12 (Conversational recap — must answer from history, not abstain)
+
+Q1: How is annual leave accrued under the enterprise agreement?
+Q2: what were we talking about?

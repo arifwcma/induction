@@ -60,6 +60,19 @@ CASE_8 = [
     "between 12-12:30 pm. will the lunch counted as worked hours or non worked hours?"
 ]
 
+# Cases 9-11: tour requests phrased various ways (should honour the guided tour).
+CASE_9 = ["i want short guided tour"]
+CASE_10 = ["lets talk about leaves", "give an overview", "lets gor for the short tour you talked about"]
+CASE_11 = ["short tour"]
+
+# Case#12: conversational recap. After a real Q&A, "what were we talking about?"
+# must be answered from the conversation (NOT abstained) - the history-aware
+# verifier should accept a recap grounded in the prior turns.
+CASE_12 = [
+    "How is annual leave accrued under the enterprise agreement?",
+    "what were we talking about?",
+]
+
 
 def looks_like_abstention(answer: str) -> bool:
     return answer.strip() == UNSURE_RESPONSE.strip()
@@ -105,6 +118,18 @@ async def run_smoke_cases():
 
         print("================ CASE 8 (single-intent emergency: meal = worked time) ================\n")
         await run_conversation(db, None, CASE_8)
+
+        print("================ CASE 9 (tour request) ================\n")
+        await run_conversation(db, None, CASE_9)
+
+        print("================ CASE 10 (tour offer taken a few turns later) ================\n")
+        await run_conversation(db, None, CASE_10)
+
+        print("================ CASE 11 (short tour, lazy phrasing) ================\n")
+        await run_conversation(db, None, CASE_11)
+
+        print("================ CASE 12 (conversational recap from history) ================\n")
+        await run_conversation(db, None, CASE_12)
 
 
 if __name__ == "__main__":

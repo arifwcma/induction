@@ -102,14 +102,20 @@ UNSURE_RESPONSE = (
 VERIFIER_INSTRUCTION = (
     "You are a reviewer checking an answer for an HR induction assistant. Decide whether the answer "
     "is safe to send.\n\n"
-    "You are given a KNOWLEDGE BASE MAP and SOURCE MATERIAL. They have different authority:\n"
+    "You are given a KNOWLEDGE BASE MAP, SOURCE MATERIAL, and the CONVERSATION SO FAR. They have "
+    "different authority:\n"
     "- The MAP is the authoritative, complete list of the documents that exist and the topics / "
     "sections each one covers. It is trustworthy for WHAT EXISTS and HOW MANY: which topics are "
     "covered, listing them, and counting them. The map lists every section, so a count or list drawn "
     "from it is correct even though no policy passage was retrieved for each item.\n"
     "- The SOURCE MATERIAL is the retrieved passages and is authoritative for SUBSTANTIVE POLICY "
     "FACTS: specific rules, numbers, durations, rates, eligibility, conditions, entitlements, and "
-    "procedures.\n\n"
+    "procedures.\n"
+    "- The CONVERSATION SO FAR is authoritative for what has already been said, asked, or answered in "
+    "this chat. An answer that recaps, summarises, or refers to the conversation itself (e.g. 'we were "
+    "talking about meal breaks', 'you just asked about annual leave', 'as I mentioned above') is "
+    "grounded if it fairly reflects the conversation - it does NOT need support from the SOURCE "
+    "MATERIAL.\n\n"
     "Classify each claim in the answer and judge it against the right authority:\n"
     "1. EXISTENCE / COVERAGE / ENUMERATION claims - that a topic, section, or leave type is covered; "
     "a LIST of such topics or leave-type NAMES; or a COUNT like 'there are 14 types of leave'. The "
@@ -122,7 +128,12 @@ VERIFIER_INSTRUCTION = (
     "2. SUBSTANTIVE POLICY claims - what a rule actually SAYS about a topic: amounts, durations, "
     "rates, eligibility, conditions, entitlements, procedures (e.g. 'meal breaks are unpaid', "
     "'20-minute paid rest break', 'annual leave accrues at X'). These MUST be supported by the SOURCE "
-    "MATERIAL. Fail any substantive fact the source material does not support.\n\n"
+    "MATERIAL. Fail any substantive fact the source material does not support.\n"
+    "3. CONVERSATIONAL / META claims - statements about the conversation itself (what was discussed, "
+    "asked, or answered earlier; recaps or summaries of this chat; greetings; offers to help). Grade "
+    "these against the CONVERSATION SO FAR and PASS them when they fairly reflect it. They are NOT "
+    "substantive policy facts, so do NOT require source material. In particular, a reply to 'what were "
+    "we talking about?' that accurately recaps the conversation MUST pass.\n\n"
     "IMPORTANT - scope is NOT your job: the SOURCE MATERIAL has ALREADY been filtered upstream so that "
     "only provisions APPLICABLE to this question remain. Any conditional, emergency, or appendix "
     "passage that is present is there precisely because it fits the question (for example, an "
@@ -137,8 +148,8 @@ VERIFIER_INSTRUCTION = (
     "Be lenient on minor citation imprecision, on high-level overviews, and on lists/counts of topics "
     "that come from the map. Never be lenient about invented substantive facts.\n\n"
     "Reply with exactly one line: 'VERDICT: pass' or 'VERDICT: fail - <short reason>'.\n\n"
-    "Knowledge base map:\n{kb_map}\n\nSource material:\n{context}\n\nQuestion:\n{question}\n\n"
-    "Answer under review:\n{answer}\n\nVerdict:"
+    "Knowledge base map:\n{kb_map}\n\nSource material:\n{context}\n\nConversation so far:\n"
+    "{conversation}\n\nQuestion:\n{question}\n\nAnswer under review:\n{answer}\n\nVerdict:"
 )
 
 
@@ -318,10 +329,21 @@ async def generate_answer_stream(
             yield chunk.delta
 
 
-def verify_answer(context_block: str, question: str, answer: str, kb_map: str = "") -> VerifierVerdict:
+def verify_answer(
+    context_block: str,
+    question: str,
+    answer: str,
+    kb_map: str = "",
+    history: list[ChatMessage] | None = None,
+) -> VerifierVerdict:
     llm = build_fast_llm()
+    conversation = format_transcript(history) if history else "(no prior conversation)"
     prompt = VERIFIER_INSTRUCTION.format(
-        kb_map=kb_map or "(none)", context=context_block, question=question, answer=answer
+        kb_map=kb_map or "(none)",
+        context=context_block,
+        question=question,
+        answer=answer,
+        conversation=conversation,
     )
     verdict_text = llm.complete(prompt).text.strip()
     passed = "verdict: pass" in verdict_text.lower()

@@ -143,7 +143,7 @@ async def _stream_drafts_and_verify(
             yield {"t": "delta", "v": token}
 
         verdict = await run_in_threadpool(
-            verify_answer, context_block, standalone_question, draft, kb_map
+            verify_answer, context_block, standalone_question, draft, kb_map, history
         )
         if verdict.passed:
             yield {"t": "final", "v": draft}
