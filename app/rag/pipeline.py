@@ -1,3 +1,4 @@
+import asyncio
 from typing import AsyncIterator
 
 from llama_index.core.llms import ChatMessage
@@ -22,6 +23,30 @@ from app.rag.kb_outline import get_kb_outline
 from app.rag.retrieval import Passage, dedup_key, retrieve_relevant_passages
 
 DRAFT_ATTEMPTS = 2
+
+# How often to re-emit the current status while a silent step runs. The
+# mechanical block (condense -> split -> retrieve -> applicability) and the
+# agentic re-retrieval send no bytes to the client; on a slow run that silent
+# gap can exceed the reverse proxy's idle read timeout, which aborts the
+# in-flight streamed response (the browser sees a 200 then an HTTP/2 stream
+# reset). A periodic keepalive keeps bytes flowing so the connection survives.
+HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+
+async def _heartbeats_until(
+    task: "asyncio.Future", label: str, interval: float = HEARTBEAT_INTERVAL_SECONDS
+) -> AsyncIterator[dict]:
+    """Yield a keepalive ``status`` frame every ``interval`` seconds until ``task``
+    completes. The frame repeats the current label, so the UI is unchanged - it
+    only exists to keep the stream from going idle. If ``task`` raises, stop
+    quietly; the caller surfaces the error via ``task.result()``."""
+    while not task.done():
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=interval)
+        except asyncio.TimeoutError:
+            yield {"t": "status", "v": label}
+        except Exception:
+            return
 
 
 def _merge_passages(primary: list[Passage], extra: list[Passage]) -> list[Passage]:
@@ -175,12 +200,21 @@ async def stream_grounded_answer(
     # Mechanical steps run on the fast, deterministic lane.
     fast_llm = build_fast_llm()
     yield {"t": "status", "v": "Searching the policy library…"}
-    standalone_question = await run_in_threadpool(
-        condense_to_standalone_question, fast_llm, history, message
-    )
-    sub_questions = await run_in_threadpool(split_into_questions, fast_llm, standalone_question)
 
-    passages, clauses = await _retrieve_and_filter(db, fast_llm, sub_questions)
+    async def _search():
+        standalone_question = await run_in_threadpool(
+            condense_to_standalone_question, fast_llm, history, message
+        )
+        sub_questions = await run_in_threadpool(
+            split_into_questions, fast_llm, standalone_question
+        )
+        passages, clauses = await _retrieve_and_filter(db, fast_llm, sub_questions)
+        return standalone_question, sub_questions, passages, clauses
+
+    search_task = asyncio.ensure_future(_search())
+    async for beat in _heartbeats_until(search_task, "Searching the policy library…"):
+        yield beat
+    standalone_question, sub_questions, passages, clauses = search_task.result()
     context_block = _build_context_block(passages, clauses, cross_session_context)
 
     yield {"t": "status", "v": "Drafting your answer…"}
@@ -201,15 +235,26 @@ async def stream_grounded_answer(
     # so refine the query, retrieve again, merge, and try once more.
     yield {"t": "reset"}
     yield {"t": "status", "v": "Double-checking the sources…"}
-    refined_query = await run_in_threadpool(
-        build_refined_search_query, fast_llm, standalone_question, _found_labels(passages, clauses)
-    )
-    if refined_query:
+
+    async def _refine():
+        refined_query = await run_in_threadpool(
+            build_refined_search_query,
+            fast_llm,
+            standalone_question,
+            _found_labels(passages, clauses),
+        )
+        if not refined_query:
+            return None
         more_passages = await _retrieve_passages(refined_query, [refined_query])
         more_clauses = await expand_clauses(db, more_passages)
-        more_passages, more_clauses = await _filter_applicable(
-            sub_questions, more_passages, more_clauses
-        )
+        return await _filter_applicable(sub_questions, more_passages, more_clauses)
+
+    refine_task = asyncio.ensure_future(_refine())
+    async for beat in _heartbeats_until(refine_task, "Double-checking the sources…"):
+        yield beat
+    refined = refine_task.result()
+    if refined is not None:
+        more_passages, more_clauses = refined
         passages = _merge_passages(passages, more_passages)
         clauses = _merge_clauses(clauses, more_clauses)
         context_block = _build_context_block(passages, clauses, cross_session_context)

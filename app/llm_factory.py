@@ -13,6 +13,14 @@ from app.config import get_settings
 
 FIXED_SEED = 7
 
+# Hard per-request ceilings so a hung or pathologically slow provider call fails
+# fast instead of stalling the streamed response (which the reverse proxy then
+# aborts mid-stream). The answer lane gets a longer ceiling because Opus replies
+# are larger; the fast mechanical lane should be quick.
+ANSWER_REQUEST_TIMEOUT = 120.0
+FAST_REQUEST_TIMEOUT = 45.0
+LLM_MAX_RETRIES = 2
+
 # Opus 4.8 ships in llama-index-llms-anthropic only on `main`; the pinned PyPI
 # release (0.11.4) does not know its context window yet, so register it. The
 # value only gates client-side context-size bookkeeping; the model id we send to
@@ -81,6 +89,7 @@ def make_llm(*, fast: bool = False, max_tokens: int | None = None, attempt: int 
     """
     settings = get_settings()
     provider, model = _resolve_provider_and_model(settings, fast)
+    request_timeout = FAST_REQUEST_TIMEOUT if fast else ANSWER_REQUEST_TIMEOUT
 
     if provider == "anthropic":
         from llama_index.llms.anthropic import Anthropic
@@ -90,6 +99,8 @@ def make_llm(*, fast: bool = False, max_tokens: int | None = None, attempt: int 
             model=model,
             api_key=settings.anthropic_api_key,
             max_tokens=max_tokens or 2048,
+            timeout=request_timeout,
+            max_retries=LLM_MAX_RETRIES,
         )
 
     from llama_index.llms.openai import OpenAI
@@ -107,6 +118,8 @@ def make_llm(*, fast: bool = False, max_tokens: int | None = None, attempt: int 
         "api_key": settings.openai_api_key,
         "temperature": 0,
         "additional_kwargs": extra,
+        "timeout": request_timeout,
+        "max_retries": LLM_MAX_RETRIES,
     }
     if max_tokens is not None:
         # Reasoning models bill reasoning tokens against the output budget, so a
