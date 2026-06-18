@@ -3,6 +3,7 @@ from llama_index.core.llms import ChatMessage
 from starlette.concurrency import run_in_threadpool
 
 from app.rag.chat import (
+    FIXED_SEED,
     UNSURE_RESPONSE,
     build_llm,
     build_search_query,
@@ -41,9 +42,13 @@ async def produce_grounded_answer(
     if cross_session_context:
         context_block = f"{context_block}\n\n[Background from earlier sessions]\n{cross_session_context}"
 
-    for _attempt in range(2):
+    # Vary the generator seed across attempts so a retry is a genuinely different
+    # draft, not an identical one (a fixed seed makes retries pointless). This lets
+    # a transient verifier rejection recover instead of abstaining on answerable questions.
+    seeds = [FIXED_SEED, FIXED_SEED + 101, FIXED_SEED + 202]
+    for seed in seeds:
         answer = await run_in_threadpool(
-            generate_answer, system_prompt, history, context_block, message, kb_map
+            generate_answer, system_prompt, history, context_block, message, kb_map, seed
         )
         verdict = await run_in_threadpool(
             verify_answer, context_block, standalone_question, answer, kb_map

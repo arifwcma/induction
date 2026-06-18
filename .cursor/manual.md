@@ -56,14 +56,14 @@ Run these from the project root (`induction`), not as always-on terminals.
 | Seed/ensure admin user | `.\.venv\Scripts\python.exe -m app.seed_admin` | Idempotent. Run once after a fresh DB. |
 | Full knowledge-base ingest | `.\.venv\Scripts\python.exe -m app.kb.ingest_kb` | SLOW + costs API. See warning below. |
 | Rebuild clause table only (cheap recovery) | `.\.venv\Scripts\python.exe -m app.kb.store_clauses_from_corpus` | ~2s, no API cost. Uses existing `kb_index/`. |
-| Run reliability eval | `.\.venv\Scripts\python.exe -m app.eval_harness` | A few minutes. Should be 8/8. |
-| Run Arif's 3 smoke cases | `.\.venv\Scripts\python.exe -m app.smoke` | Replays the verbatim cases in `.cursor/smokecases.md`. Run after any major LLM change. |
+| Run reliability eval | `.\.venv\Scripts\python.exe -m app.eval_harness` | A few minutes. Should be 9/9. |
+| Run Arif's smoke cases | `.\.venv\Scripts\python.exe -m app.smoke` | Replays the verbatim cases in `.cursor/smokecases.md` (Cases 1–6). Run after any major LLM change. |
 
 ### Ingest warning (read before running `app.kb.ingest_kb`)
 
-- **Time: ~8–12 minutes** (one sequential LLM situating+title call per unit, ~300 of them).
+- **Time: ~10–12 minutes** (one sequential LLM situating+title call per unit, ~370 of them).
 - It is a **full rebuild, no duplication**: it wipes the Qdrant collection, overwrites the BM25 corpus, and replaces the clause table.
-- It **finishes and exits** (not a server) — prints `Ingested N contextual chunks, N clauses, N BM25 records.` when done (currently ~331 chunks / ~311 clauses).
+- It **finishes and exits** (not a server) — prints `Ingested N contextual chunks, N clauses, N BM25 records.` when done (currently ~385 chunks / ~368 clauses, after the finer Appendix C segmentation).
 - **It erases trainer-added KB** (anything trainers added live via the app), because it deletes the whole Qdrant collection. Only the files in `documents/` are re-ingested.
 - The KB MAP (used for overviews/"how many"/tour) is rebuilt from the clause table, so it refreshes automatically after ingest.
 
@@ -90,9 +90,9 @@ Run these from the project root (`induction`), not as always-on terminals.
 ## Quick health checks
 
 - Backend alive: open http://localhost:8000/docs
-- Vectors present: ~331 chunks in Qdrant after ingest.
-- Clauses present: ~311 rows in the `clause` table after ingest.
-- Reliability OK: `app.eval_harness` returns OVERALL 8/8; `app.smoke` shows no abstentions on Case 1/2/3.
+- Vectors present: ~385 chunks in Qdrant after ingest.
+- Clauses present: ~368 rows in the `clause` table after ingest.
+- Reliability OK: `app.eval_harness` returns OVERALL 9/9; `app.smoke` shows no abstentions on Cases 1–6.
 
 ## Typical daily start (everything already set up)
 

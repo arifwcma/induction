@@ -4,12 +4,14 @@ from app.rag.retrieval import Passage
 
 
 APPLICABILITY_PROMPT = (
-    "An organisational policy provision applies ONLY under a specific condition. Decide whether that "
-    "condition clearly holds for the employee's situation.\n\n"
-    "Employee's situation / question:\n{question}\n\n"
+    "An organisational policy provision applies ONLY under a specific condition. Decide whether this "
+    "provision should be used to answer the employee's question.\n\n"
+    "Employee's question:\n{question}\n\n"
     "The provision applies only when: {condition}\n\n"
-    "Answer with one word: 'yes' if the employee's situation clearly meets that condition, or 'no' if "
-    "it does not or is just an ordinary situation. When unsure, answer 'no'."
+    "Answer 'yes' if EITHER the employee's situation clearly meets that condition OR the question is "
+    "explicitly asking about that conditional scenario/topic (for example, asking what happens during "
+    "emergency work when the condition is about emergencies). Answer 'no' only if the question is "
+    "about an ordinary situation that does not involve this condition. Reply with one word: 'yes' or 'no'."
 )
 
 

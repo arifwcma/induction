@@ -27,6 +27,23 @@ CASE_3 = [
     "will the lunch counted as worked hours or non worked hours?"
 ]
 
+# Issue#1: emergency-work follow-up to the lunch question.
+CASE_4 = [
+    "say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. "
+    "will the lunch counted as worked hours or non worked hours?",
+    "what would be the case during emergency work",
+]
+
+# Issue#2 + #2.2: emergency-work overview, then a tour request with NO greeting in
+# history (matches the real app, where the greeting is frontend-only).
+CASE_5 = [
+    "tell me about emergency work",
+    "okay lets talk about the short tours",
+]
+
+# Issue#3: broad open topic should get a short overview first, not only a clarifier.
+CASE_6 = ["lets talk about leaves"]
+
 
 def looks_like_abstention(answer: str) -> bool:
     return answer.strip() == UNSURE_RESPONSE.strip()
@@ -57,6 +74,15 @@ async def run_smoke_cases():
 
         print("================ CASE 3 (Bug1: lunch break) ================\n")
         await run_conversation(db, None, CASE_3)
+
+        print("================ CASE 4 (Issue#1: emergency follow-up) ================\n")
+        await run_conversation(db, None, CASE_4)
+
+        print("================ CASE 5 (Issue#2 + #2.2: emergency overview, then tour) ================\n")
+        await run_conversation(db, None, CASE_5)
+
+        print("================ CASE 6 (Issue#3: broad topic overview first) ================\n")
+        await run_conversation(db, None, CASE_6)
 
 
 if __name__ == "__main__":

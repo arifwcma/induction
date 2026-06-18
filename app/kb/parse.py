@@ -17,7 +17,7 @@ NOISE_PATTERNS = [
 TOP_CLAUSE = re.compile(r"^(\d{1,2})\.\s+([A-Za-z][A-Za-z0-9 ,/'’()&\-]{2,60})\s*$")
 NUMBER_ONLY = re.compile(r"^(\d{1,2})\.?$")
 ALLCAPS_TITLE = re.compile(r"^[A-Z][A-Z0-9 ,/'’()&\-]{2,60}$")
-SUB_CLAUSE = re.compile(r"^(\d{1,2}(?:\.\d{1,2}){1,3})\s*$")
+SUB_CLAUSE = re.compile(r"^(\d{1,2}(?:\.\d{1,2}){1,3})\.?\s*$")
 APPENDIX = re.compile(r"^APPENDIX\s+([A-Z]):?\s*[-–]?\s*(.*)$", re.IGNORECASE)
 
 
@@ -114,6 +114,7 @@ def parse_pdf_clauses(pdf_path: Path) -> list[ClauseUnit]:
     units: list[ClauseUnit] = []
 
     current_appendix = ""
+    current_appendix_key = ""
     current_top_label = ""
     current_unit: ClauseUnit | None = None
 
@@ -146,13 +147,25 @@ def parse_pdf_clauses(pdf_path: Path) -> list[ClauseUnit]:
 
         kind, number_or_label, title = heading
         if kind == "appendix":
+            # The appendix title repeats as a running page header on every page of
+            # the appendix. Only the first occurrence opens the appendix; later
+            # repeats of the same appendix are header noise and must not start a
+            # new unit (otherwise the appendix is split by page instead of by clause).
+            if current_appendix_key == number_or_label:
+                continue
             current_appendix = f"{number_or_label}: {title}".strip(": ")
+            current_appendix_key = number_or_label
             current_top_label = ""
             start_unit(number_or_label, title, page_number)
         elif kind == "top":
-            current_appendix = ""
-            current_top_label = f"{number_or_label}. {title}"
-            start_unit(number_or_label, title, page_number)
+            if current_appendix:
+                # Numbering restarts inside an appendix (1., 1.1, 1.5, ...). Treat a
+                # numbered heading here as a sub-unit OF the appendix rather than a
+                # new top-level clause, so the appendix stays whole and splits finely.
+                start_unit(number_or_label, title, page_number)
+            else:
+                current_top_label = f"{number_or_label}. {title}"
+                start_unit(number_or_label, title, page_number)
         else:
             start_unit(number_or_label, "", page_number)
 

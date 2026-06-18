@@ -48,7 +48,8 @@ def render_outline(clauses: list[Clause]) -> str:
         if not labels:
             continue
         document_name = source.rsplit(".", 1)[0]
-        blocks.append(f"{document_name}:\n  " + "; ".join(labels))
+        listed = "\n".join(f"  - {label}" for label in labels)
+        blocks.append(f"{document_name}:\n{listed}")
 
     if not blocks:
         return ""

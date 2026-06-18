@@ -124,6 +124,21 @@ Purpose: prove the bot never abstains on a question clearly answerable from the 
 Steps: ask "tell me about leaves and breaks", then the follow-up "how many of them we got".
 Expected: it answers with the count and list of leave types (drawn from the KB map), and does NOT return the canned "could not find this clearly..." abstention. Part of the eval harness (category: coverage) and `app.smoke` Case 1.
 
+### C1f. Issue#1 — explicit emergency-work question answered correctly (not abstained, not wrong)
+Purpose: prove the bot engages with an explicit conditional-scenario question and grounds the right rule.
+Steps: ask the normal-day meal-break question, then the follow-up "what would be the case during emergency work".
+Expected: it answers that during emergency work a meal break (meal interval) COUNTS as time worked (Appendix C, clause 1.5) — the opposite of the normal-day answer — and does NOT abstain. Requires the finer Appendix C segmentation (re-ingest). Part of the eval harness (category: scope) and `app.smoke` Case 4.
+
+### C1g. Issue#2.2 — "the short tours" relates to the bot's own tour offer
+Purpose: tour self-awareness works even though the greeting is frontend-only and not in backend history.
+Steps: "tell me about emergency work", then "okay lets talk about the short tours".
+Expected: the bot gives the guided walkthrough of topic areas; it does NOT say tours are not in the materials. `app.smoke` Case 5.
+
+### C1h. Issue#3 — broad topic gets an overview first
+Purpose: never reply with only a clarifying question.
+Steps: "lets talk about leaves".
+Expected: a concise overview of the leave types first, then optionally one focused follow-up. `app.smoke` Case 6.
+
 ### C2. Confidence gate — out-of-scope question
 Purpose: req 2 (no guessing).
 Steps: ask something not in the documents, e.g. "What's the wifi password for the Melbourne office?"

@@ -99,7 +99,14 @@ Phase 2 (structure-agnostic ingestion, requires re-ingest):
 - Per-page fallback segmentation so unstructured PDFs never yield zero units.
 - KB MAP built from the clause table (not a live regex re-parse), so it reflects generated titles.
 
-Acceptance: `app.eval_harness` 8/8; `app.smoke` (Arif's three verbatim cases in `.cursor/smokecases.md`) clean, 0 abstentions across repeated runs. Bug1 and Bug2 documented in `.cursor/project.md`. Deploy per `deploy/README.md` (`m1_update.sh` / `update.sh` / `hard_update.sh`).
+Phase 3 (emergency-work questions + conversational polish; requires re-ingest):
+- Verifier trusts the applicability filter as the scope gate (no longer fails answers for using emergency/conditional content) — fixes Issue#1/#2 false abstention; Bug1 still holds via the filter + generator prompt.
+- Finer appendix segmentation (`parse.py`): accept trailing-dot sub-clauses, suppress repeated per-page appendix headers, treat numbered headings inside an appendix as its sub-units. Appendix C: 15 → 66 fine units; buried rules (e.g. clause 1.5 "meal interval counts as time worked") now retrievable.
+- Topic-carrying condense for bare situation/condition follow-ups ("what would be the case during emergency work" → "During emergency work, does a meal break count as worked hours?"), but never for topic switches.
+- Tour self-awareness + overview-first in the system prompt (Issue#2.2, Issue#3).
+- Map rendered one section per line (verifier could not reliably find items in the old wall-of-text) and varied retry seeds.
+
+Acceptance: `app.eval_harness` 9/9 (incl. Bug1 ordinary-day AND Issue#1 emergency-work meal break); `app.smoke` Cases 1–6 in `.cursor/smokecases.md` clean (Issue#1 measured 6/6 correct). Re-ingest ~385 chunks / ~368 clauses. Bugs/Issues documented in `.cursor/project.md`. Deploy per `deploy/README.md` — Phase 3 changed ingestion, so a re-ingest is MANDATORY (`hard_update.sh`).
 
 ### New backend endpoints (for the frontend to consume)
 - Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.

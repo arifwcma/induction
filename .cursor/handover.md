@@ -21,12 +21,14 @@ A fast, concise, ChatGPT-like assistant for NEW Wimmera CMA employees. It answer
 Milestones: **M1 = MVP on a static KB (current, essentially done).** M2 = scale + self-service ingestion (see Roadmap §9).
 
 ## 3. Current status (verified locally against real Postgres/Qdrant/Cohere/OpenAI)
-The M1 reliability stack is built and runtime-verified. Both target bugs are fixed and genuinely grounded:
+The M1 reliability stack is built and runtime-verified. Both target bugs plus the second round of live-testing issues are fixed and genuinely grounded:
 - Bug1 fixed on BOTH halves (see §5).
 - Bug2 fixed (see §5).
+- Issue#1 (explicit emergency-work questions): fixed — answers correctly that during emergency work a meal break COUNTS as time worked (clause 1.5), the opposite of the normal day. Required finer appendix chunking (re-ingest), a topic-carrying condense, and making the verifier trust the applicability filter for scope (see §5).
+- Issue#2 (emergency overview), Issue#2.2 ("short tours" relates to the bot's own tour offer even with no greeting in history), Issue#3 (broad topics get an overview first): fixed.
 - Overviews, "how many", and the guided tour all work.
-- `app.eval_harness` = 8/8. `app.smoke` (Arif's 3 verbatim cases) = clean, 0 abstentions across repeated runs.
-- Latest work pushed to `main`. Ingestion command is `python -m app.kb.ingest_kb` (old `app/ingest.py` and `app/regression.py` were deleted).
+- `app.eval_harness` = 9/9. `app.smoke` (Arif's verbatim Cases 1–6 in `.cursor/smokecases.md`) = clean. Re-ingest produces ~385 chunks / ~368 clauses.
+- Ingestion command is `python -m app.kb.ingest_kb` (old `app/ingest.py` and `app/regression.py` were deleted). Phase 3 changed `app/kb/parse.py`, so the server needs a re-ingest (`hard_update.sh`).
 
 ## 4. How it works — the answer pipeline
 Everything funnels through `produce_grounded_answer` in `app/rag/pipeline.py` (used by `/chat`, `app.ask`, `app.smoke`, and the eval harness). Per turn:
@@ -35,10 +37,10 @@ Everything funnels through `produce_grounded_answer` in `app/rag/pipeline.py` (u
 3. Query rewrite (`build_search_query`) → a concept-focused search query (drops scenario noise, expands "lunch"→"meal break").
 4. Retrieve: dense (Qdrant) + BM25 candidates gathered for BOTH the standalone question and the rewritten query, fused/deduped, then Cohere-reranked against the true question (`app/rag/retrieval.py`).
 5. Expand clauses: add sibling + cross-referenced clauses from the clause table (`app/rag/expansion.py`).
-6. Applicability filter (`app/rag/applicability.py`): drop conditional passages whose condition does not hold for the question. THIS is the primary Bug1 guard.
+6. Applicability filter (`app/rag/applicability.py`): the SCOPE GATE. Keeps a conditional passage when the question's situation matches its condition OR the question is explicitly about that conditional topic (e.g. "emergency work"); drops it for ordinary-day questions. This is the primary Bug1 guard AND what lets explicit emergency questions through.
 7. Generate (`generate_answer`) with the system prompt + MAP + SOURCE MATERIAL.
-8. Verify (`verify_answer`): map-authoritative for coverage; source-required for substantive facts; scope violation = hard fail. Fail → regenerate once; still fail → abstain (`UNSURE_RESPONSE`).
-All chat/verifier LLM calls use `temperature=0` + a fixed `seed` (`build_llm`).
+8. Verify (`verify_answer`): map-authoritative for coverage; source-required for substantive facts. It does NOT re-judge scope — it trusts the applicability filter (any conditional passage still present was already deemed applicable), only checking grounding + fabrication. Fail → regenerate with a DIFFERENT seed (up to 3 attempts); still fail → abstain (`UNSURE_RESPONSE`).
+All chat/verifier LLM calls use `temperature=0` + a fixed `seed` (`build_llm`); the generation retry varies the seed per attempt.
 
 Ingestion (`app/kb/ingest_kb.py`): parse (`app/kb/parse.py`) → situate+chunk with generated titles (`app/kb/contextual.py`) → embed to Qdrant + save BM25 corpus (`kb_index/`) + persist clause table (`app/kb/clause_model.py`). Full rebuild each run; wipes the Qdrant collection (so trainer-added KB is erased).
 
@@ -49,7 +51,10 @@ Ingestion (`app/kb/ingest_kb.py`): parse (`app/kb/parse.py`) → situate+chunk w
    A keyword `detect_scope` hack was tried early and REJECTED. Never special-case emergencies.
 2. **Bug2 — false abstention on coverage/"how many".** The model listed every leave type from the MAP correctly, but the verifier graded each item against retrieved passages and failed them → canned abstention ~83% of runs. Fix: MAP is authoritative for existence/coverage/enumeration in both generation and verification. Principle: answer only accurately, but NEVER abstain on a clearly KB-answerable question.
 3. **gpt-4o-mini is NOT deterministic even at temperature 0.** Identical input gave different verdicts run-to-run (e.g. 5/6 abstain then 3/3 pass). A fixed `seed` materially stabilised it but it is best-effort (OpenAI does not guarantee determinism). The verifier is both the main reliability lever AND the main false-abstention risk — tune its prompt carefully and always re-measure stability over several runs, not once.
-4. **Don't trust document structure.** Future docs may have no headings. We generate a section TITLE per unit at ingest and fall back to per-page units for unstructured PDFs. The KB MAP is built from the clause table so generated titles flow through.
+4. **Don't trust document structure.** Future docs may have no headings. We generate a section TITLE per unit at ingest and fall back to per-page units for unstructured PDFs. The KB MAP is built from the clause table so generated titles flow through. Phase 3 lesson: dense numbered appendices (Appendix C) hid two structural traps — a per-page running header that matched the APPENDIX regex (split the appendix by page) and trailing-dot sub-clause numbers (`1.5.`) the regex rejected (so sub-rules never split and were unretrievable). `parse.py` now suppresses repeated appendix headers, accepts trailing-dot sub-clauses, and treats numbered headings inside an appendix as its sub-units. Watch for the same patterns in new documents.
+5. **The verifier must NOT re-judge scope.** Originally the verifier failed any answer that used emergency/conditional content, which caused false abstention on EXPLICIT emergency questions (Issue#1/#2) — it kept calling an emergency question "ordinary". The fix: scope/applicability is decided ONCE, upstream, by the applicability filter; the verifier trusts that and only checks grounding + fabrication. Don't reintroduce a scope check in the verifier.
+6. **Condense can silently lose the topic.** "what would be the case during emergency work" condensed to a topic-less standalone, so retrieval missed the meal-break clause. The condense now carries the prior topic forward for bare situation/condition follow-ups — but NOT for topic switches ("lets talk about X"), which it must leave alone (carrying the wrong topic broke the tour case). Re-measure several runs after touching the condense prompt.
+7. **Map legibility matters for the verifier.** The map rendered as one long semicolon line caused the verifier to intermittently miss real items (e.g. "Workplace Training Leave", §47) → flaky Bug2 abstention. It's now one section per line. And a fixed-seed retry is useless (identical draft) — the retry varies the seed.
 5. **Diagnose, don't guess.** Every real fix here came from tracing the actual pipeline (retrieval ranks, applicability output, verifier verdict/reason), not from assuming. When something abstains, find out WHICH stage produced the abstention before changing anything.
 
 ## 6. Key files
@@ -85,7 +90,7 @@ Ingestion (`app/kb/ingest_kb.py`): parse (`app/kb/parse.py`) → situate+chunk w
   - Rule of thumb: changed anything under `app/kb/**`, `documents/`, or the map/clause schema → `hard_update.sh`. Changed only `app/rag/**` or frontend → `update.sh`.
 - Required server `.env` keys: `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL`, `OPENAI_EMBEDDING_MODEL`, `COHERE_API_KEY`, `COHERE_RERANK_MODEL`, `QDRANT_COLLECTION`, `DOCUMENTS_DIR`, `FRONTEND_ORIGIN=https://induction.wcma.work`, `JWT_SECRET`, `POSTGRES_PASSWORD`, `COOKIE_SECURE=true`, `ALLOWED_EMAIL_DOMAIN=wcma.vic.gov.au`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`. `DATABASE_URL` + `QDRANT_URL` come from compose — don't hardcode localhost on the server. Server `.env` is gitignored (lives only on the box).
 - nginx (one-time, manual): the `induction.wcma.work` 443 block must route ALL backend paths, not just `/chat`. Matcher: `location ~ ^/(chat|auth|users|sessions|kb|admin|health)`. Full block + reload command in `deploy/README.md`. Without it, login/admin/sessions 404.
-- Verify after deploy: `docker compose exec -T induction python -m app.eval_harness` (8/8) and `... python -m app.smoke` (no abstentions).
+- Verify after deploy: `docker compose exec -T induction python -m app.eval_harness` (9/9) and `... python -m app.smoke` (no abstentions on Cases 1–6).
 
 ## 9. Roadmap / next tasks
 M2 (planned): auto-refresh ingestion on document upload (change-detection so a new/edited doc re-ingests automatically), and robust retrieval for a larger KB (hierarchical/structured retrieval beyond the current rerank step).

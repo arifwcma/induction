@@ -20,6 +20,22 @@ CASES = [
         "expect_abstain": False,
     },
     {
+        "name": "Issue#1: emergency-work meal break counts as worked time (clause 1.5), opposite of the normal day",
+        "category": "scope",
+        "history": [
+            (
+                "user",
+                "say i worked between 8 AM - 4 PM, with lunch between 12-12:30 pm. "
+                "will the lunch counted as worked hours or non worked hours?",
+            ),
+            ("assistant", "Your lunch break would be counted as non-worked hours (clause 23.2)."),
+        ],
+        "question": "what would be the case during emergency work",
+        "expect_contains_any": ["counted as time worked", "1.5", "part of your working", "time worked"],
+        "expect_absent_all": ["could not find"],
+        "expect_abstain": False,
+    },
+    {
         "name": "ordinary hours question not answered from emergency provisions",
         "category": "scope",
         "question": "On a normal working day, what are my standard hours of work?",

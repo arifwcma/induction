@@ -21,3 +21,20 @@ Root cause (traced, not inferred): the model correctly enumerates all leave type
 Re-ingestion does NOT fix Bug2: the map already contains every section; the defect is in verification scope, not ingestion.
 
 Proper fix (general, no case-specific keywords): treat the KB map as an authoritative source for EXISTENCE / COVERAGE / ENUMERATION claims (what documents and topics/sections exist, how many) in both generation and verification, while still REQUIRING retrieved source material for any SUBSTANTIVE policy fact (rules, numbers, durations, eligibility, conditions) and keeping the scope-violation (Bug1) check a hard fail. This removes false abstention on KB-answerable coverage questions without opening a hallucination hole, because the map carries only section titles — never rule content. Guiding principle (Arif): answer only accurately, but never abstain on a question that is clearly answerable from the KB.
+
+### Issue#1 — explicit emergency-work questions abstained / answered wrongly (verifier over-reach + coarse appendix chunking + lossy condense)
+Symptom: after a normal-day meal-break answer, "what would be the case during emergency work" abstained; or it answered that emergency meal breaks are NOT worked time — the OPPOSITE of the EA (Appendix C clause 1.5: "Meal intervals will not exceed 30 minutes and will be counted as time worked").
+
+Three stacked root causes (all traced):
+1. Verifier over-reach: the Bug1 scope-violation rule failed ANY answer that used conditional/emergency content, without checking whether the QUESTION was explicitly about emergencies. Fix: the applicability filter is the scope gate; the verifier now TRUSTS it (any conditional passage still present was already deemed applicable upstream) and only judges grounding + fabrication.
+2. Coarse Appendix C chunking: the appendix repeats its title as a per-page running header, which matched the APPENDIX regex and split the appendix BY PAGE; its sub-clauses ("1.5.", "1.6.1.") were never split because SUB_CLAUSE rejected the trailing dot. So clause 1.5 ("counts as time worked") was buried inside a large multi-topic chunk and never retrieved. Fix (parse.py): accept trailing-dot sub-clauses, suppress repeated appendix headers, and treat numbered headings inside an appendix as sub-units of it. Re-ingest required. Appendix C went 15 coarse blobs → 66 fine sub-clause units.
+3. Lossy condense on follow-ups: "what would be the case during emergency work" condensed to a topic-less standalone, dropping the meal/worked-hours subject, so retrieval missed clause 1.5. Fix (condense prompt): carry the prior topic forward ONLY when the follow-up is a bare situation/condition change ("what about during X"), never when it introduces its own topic ("lets talk about X").
+
+### Issue#2.2 — bot could not relate "the short tours" to its own greeting offer
+Root cause: the opening greeting is rendered by the frontend (initialMessages) and is never persisted, so the backend history never contains the tour offer. Fix (general): the system prompt makes the bot self-aware that it offers a guided tour, so tour/walkthrough requests are honoured even with no greeting in history.
+
+### Issue#3 — broad open topics got only a clarifying question, no overview
+Fix (prompt): for broad topics give a concise overview FIRST, then optionally one focused follow-up; never reply with only a clarifying question.
+
+### Reliability note — map legibility + retry seeds
+The KB map was rendered as one long semicolon line; the verifier intermittently failed to find real items in it (e.g. "Workplace Training Leave", §47), causing flaky Bug2 abstention. Fix: render the map one section per line. Also the generation retry now varies the LLM seed per attempt (a fixed-seed retry produced an identical draft, so retries were useless).

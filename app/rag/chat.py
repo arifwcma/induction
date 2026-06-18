@@ -25,17 +25,20 @@ DEFAULT_SYSTEM_PROMPT = (
     "- Never invent facts.\n\n"
     "How to respond (use judgement, be genuinely helpful):\n"
     "- Greetings or 'what can you help with': briefly say what you cover (draw on the map) and invite "
-    "a question. You CAN offer and give a short guided walkthrough of the main topics when asked - "
-    "summarise the areas from the map and let the person pick where to go deeper. Honour anything an "
-    "earlier greeting offered (such as a short guided tour).\n"
-    "- Broad or open questions ('tell me about leave and breaks', 'give me an overall idea', 'how "
-    "many types of leave are there'): give a real, useful overview. Summarise the relevant topics "
-    "from the map together with whatever substance is in the source material, then offer to go "
-    "deeper. Do NOT refuse a broad question or bounce it back with only a clarifying question - "
-    "answer first, then optionally ask what they want next.\n"
+    "a question.\n"
+    "- Tour / walkthrough requests ('give me the tour', 'the tour you offered', 'walk me through', "
+    "'show me around', 'short tour'): you ARE the induction assistant and you DO offer a short guided "
+    "tour. Give it - briefly say what you cover and walk through the main topic areas from the map, "
+    "then let the person pick where to go deeper. NEVER say you cannot give a tour, that tours are "
+    "not in the materials, or to ask someone else: the tour simply IS this walkthrough of the topics.\n"
+    "- Broad or open topics ('tell me about leave and breaks', 'lets talk about leaves', 'give me an "
+    "overall idea', 'how many types of leave are there'): ALWAYS give a concise overview FIRST - a "
+    "few sentences or a short list of the relevant topics from the map plus any substance from the "
+    "source material - and THEN, if useful, ask one focused follow-up. NEVER reply with only a "
+    "clarifying question and no overview.\n"
     "- Specific questions: answer directly and concisely from the source material, with citations.\n"
-    "- Ask a clarifying question only when the request is genuinely ambiguous AND you cannot give a "
-    "useful partial answer. Prefer answering first, then narrowing.\n"
+    "- Ask a clarifying question only AFTER you have given at least a short overview or partial "
+    "answer; never make a clarifying question your entire reply.\n"
     "- Out of scope (e.g. IT passwords, building keys, personal HR cases): say plainly it is not "
     "covered by the induction materials and point them to their manager or People & Culture.\n\n"
     "Be concise and plain. Use the conversation so far; do not re-ask what the person already told you.\n\n"
@@ -65,8 +68,19 @@ DEFAULT_SYSTEM_PROMPT = (
 
 CONDENSE_INSTRUCTION = (
     "Given the conversation so far and a follow-up message, rewrite the follow-up as a single "
-    "standalone question understandable without the conversation. Keep the original wording where "
-    "possible. Return only the rewritten question.\n\n"
+    "standalone question understandable without the conversation. Keep the user's wording where "
+    "possible.\n"
+    "IMPORTANT - carry-over rule (apply ONLY when it clearly fits): if the follow-up has NO topic of "
+    "its own and merely asks about a new SITUATION or CONDITION applied to what was just discussed "
+    "(for example 'what would be the case during emergency work', 'what if I'm a casual', 'and on a "
+    "public holiday?'), carry the prior topic in so the question is specific. For example, after a "
+    "question about whether a lunch/meal break counts as worked hours, rewrite 'what would be the "
+    "case during emergency work' as 'During emergency work, does a meal break count as worked "
+    "hours?'.\n"
+    "Do NOT apply the carry-over rule when the follow-up names its OWN topic or switches subject "
+    "(for example 'lets talk about the short tours', 'tell me about leave', 'give me an overview of "
+    "X'): keep that topic as-is and do not inject earlier topics into it.\n"
+    "Return only the rewritten question.\n\n"
     "Conversation so far:\n{transcript}\n\nFollow-up message: {message}\n\nStandalone question:"
 )
 
@@ -110,17 +124,19 @@ VERIFIER_INSTRUCTION = (
     "rates, eligibility, conditions, entitlements, procedures (e.g. 'meal breaks are unpaid', "
     "'20-minute paid rest break', 'annual leave accrues at X'). These MUST be supported by the SOURCE "
     "MATERIAL. Fail any substantive fact the source material does not support.\n\n"
+    "IMPORTANT - scope is NOT your job: the SOURCE MATERIAL has ALREADY been filtered upstream so that "
+    "only provisions APPLICABLE to this question remain. Any conditional, emergency, or appendix "
+    "passage that is present is there precisely because it fits the question (for example, an "
+    "emergency provision appears only when the question is about emergencies). You MUST NOT fail an "
+    "answer for using conditional / emergency / appendix content, and you must NOT decide whether a "
+    "condition applies - that has already been decided. Judge only grounding and fabrication.\n\n"
     "FAIL the answer only if:\n"
     "- A SUBSTANTIVE policy fact (a rule's content, not the mere existence/name of a topic) is not "
     "supported by the SOURCE MATERIAL, OR\n"
-    "- SCOPE VIOLATION (most important): the answer's substance is drawn from a passage marked "
-    "'conditional' (for example an emergency / AIIMS / incident-response appendix) while the question "
-    "describes an ordinary, non-emergency situation. If the question is about a normal working day and "
-    "the answer relies on emergency or appendix content, you MUST fail it - even if the wording matches, OR\n"
     "- It names a topic, section, clause, or document that appears in NEITHER the map NOR the source "
     "material (a genuine fabrication).\n\n"
     "Be lenient on minor citation imprecision, on high-level overviews, and on lists/counts of topics "
-    "that come from the map. Never be lenient about scope violations or about invented substantive facts.\n\n"
+    "that come from the map. Never be lenient about invented substantive facts.\n\n"
     "Reply with exactly one line: 'VERDICT: pass' or 'VERDICT: fail - <short reason>'.\n\n"
     "Knowledge base map:\n{kb_map}\n\nSource material:\n{context}\n\nQuestion:\n{question}\n\n"
     "Answer under review:\n{answer}\n\nVerdict:"
@@ -136,13 +152,13 @@ class VerifierVerdict:
 FIXED_SEED = 7
 
 
-def build_llm() -> OpenAI:
+def build_llm(seed: int = FIXED_SEED) -> OpenAI:
     settings = get_settings()
     return OpenAI(
         model=settings.openai_chat_model,
         api_key=settings.openai_api_key,
         temperature=0,
-        additional_kwargs={"seed": FIXED_SEED},
+        additional_kwargs={"seed": seed},
     )
 
 
@@ -210,8 +226,9 @@ def generate_answer(
     context_block: str,
     message: str,
     kb_map: str = "",
+    seed: int = FIXED_SEED,
 ) -> str:
-    llm = build_llm()
+    llm = build_llm(seed)
     messages = [ChatMessage(role=MessageRole.SYSTEM, content=system_prompt)]
     if kb_map:
         messages.append(
