@@ -7,16 +7,19 @@ from starlette.concurrency import run_in_threadpool
 
 from app.models import Clause
 from app.rag.chat import (
+    GAP_RESPONSE,
     UNSURE_RESPONSE,
     build_fast_llm,
     build_refined_search_query,
     build_search_query,
+    classify_gap,
     condense_to_standalone_question,
     format_context,
     generate_answer_stream,
     split_into_questions,
     verify_answer,
 )
+from app.gap_store import log_gap
 from app.rag.applicability import keep_applicable
 from app.rag.expansion import expand_clauses
 from app.rag.kb_outline import get_kb_outline
@@ -183,13 +186,15 @@ async def stream_grounded_answer(
     cross_session_context: str,
     system_prompt: str,
     message: str,
+    user_id=None,
+    session_key: str | None = None,
 ) -> AsyncIterator[dict]:
     """Drive the grounded-answer pipeline, yielding UI events:
 
       - {"t": "status", "v": ...} : a progress milestone
       - {"t": "delta",  "v": ...} : a streamed token of the current draft
       - {"t": "reset"}            : clear the current (unverified) draft
-      - {"t": "final",  "v": ...} : the verified answer (or abstention)
+      - {"t": "final",  "v": ...} : the verified answer, the gap message, or abstention
 
     The verifier still gates what is committed: a draft that fails verification
     is reset rather than left on screen, and the model gets a refined-retrieval
@@ -201,20 +206,30 @@ async def stream_grounded_answer(
     fast_llm = build_fast_llm()
     yield {"t": "status", "v": "Searching the policy library…"}
 
+    # Condense first, then check the question against the KB map. If the topic is
+    # one the documents simply do not cover, log a knowledge gap and return the
+    # gap message instead of guessing - the reactive Gaps mechanism.
+    standalone_question = await run_in_threadpool(
+        condense_to_standalone_question, fast_llm, history, message
+    )
+    gap_verdict = await run_in_threadpool(classify_gap, fast_llm, standalone_question, kb_map)
+    if gap_verdict.is_gap:
+        if db is not None and user_id is not None and session_key:
+            await log_gap(db, user_id, session_key, standalone_question, gap_verdict.topic)
+        yield {"t": "final", "v": GAP_RESPONSE}
+        return
+
     async def _search():
-        standalone_question = await run_in_threadpool(
-            condense_to_standalone_question, fast_llm, history, message
-        )
         sub_questions = await run_in_threadpool(
             split_into_questions, fast_llm, standalone_question
         )
         passages, clauses = await _retrieve_and_filter(db, fast_llm, sub_questions)
-        return standalone_question, sub_questions, passages, clauses
+        return sub_questions, passages, clauses
 
     search_task = asyncio.ensure_future(_search())
     async for beat in _heartbeats_until(search_task, "Searching the policy library…"):
         yield beat
-    standalone_question, sub_questions, passages, clauses = search_task.result()
+    sub_questions, passages, clauses = search_task.result()
     context_block = _build_context_block(passages, clauses, cross_session_context)
 
     yield {"t": "status", "v": "Drafting your answer…"}
@@ -278,12 +293,14 @@ async def produce_grounded_answer(
     cross_session_context: str,
     system_prompt: str,
     message: str,
+    user_id=None,
+    session_key: str | None = None,
 ) -> str:
     """Non-streaming entry point (eval, smoke, ask). Drives the streaming
     pipeline and returns only the final verified answer."""
     final = UNSURE_RESPONSE
     async for event in stream_grounded_answer(
-        db, history, cross_session_context, system_prompt, message
+        db, history, cross_session_context, system_prompt, message, user_id, session_key
     ):
         if event["t"] == "final":
             final = event["v"]

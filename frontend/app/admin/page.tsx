@@ -5,22 +5,27 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   adminDeleteKB,
+  adminDeleteUser,
   adminGetPrompt,
+  adminListGaps,
   adminListKB,
   adminListUsers,
   adminResetPassword,
   adminSessionMessages,
+  adminSetGapStatus,
   adminSetRole,
   adminUpdatePrompt,
   adminUserSessions,
   fetchCurrentUser,
   type CurrentUser,
+  type Gap,
   type KBEntry,
   type SessionSummary,
   type StoredMessage,
 } from "@/lib/api";
 
 const ROLES = ["basic", "trainer", "admin"];
+const GAP_STATUSES = ["open", "reviewed", "dismissed"];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -30,6 +35,7 @@ export default function AdminPage() {
   const [prompt, setPrompt] = useState("");
   const [promptSaved, setPromptSaved] = useState(false);
   const [kbEntries, setKbEntries] = useState<KBEntry[]>([]);
+  const [gaps, setGaps] = useState<Gap[]>([]);
 
   const [viewedUserId, setViewedUserId] = useState("");
   const [userSessions, setUserSessions] = useState<SessionSummary[]>([]);
@@ -43,6 +49,10 @@ export default function AdminPage() {
     setKbEntries(await adminListKB());
   }, []);
 
+  const loadGaps = useCallback(async () => {
+    setGaps(await adminListGaps());
+  }, []);
+
   useEffect(() => {
     (async () => {
       const currentUser = await fetchCurrentUser();
@@ -54,10 +64,11 @@ export default function AdminPage() {
       setAuthorized(true);
       await loadUsers();
       await loadKB();
+      await loadGaps();
       const promptResponse = await adminGetPrompt();
       setPrompt(promptResponse.prompt);
     })();
-  }, [router, loadUsers, loadKB]);
+  }, [router, loadUsers, loadKB, loadGaps]);
 
   async function changeRole(userId: string, role: string) {
     await adminSetRole(userId, role);
@@ -71,6 +82,40 @@ export default function AdminPage() {
     }
     await adminResetPassword(userId, newPassword);
     alert("Password reset.");
+  }
+
+  async function deleteUser(userId: string, email: string) {
+    if (!window.confirm(`Delete ${email} and all of their chat history? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await adminDeleteUser(userId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not delete this user.");
+      return;
+    }
+    if (viewedUserId === userId) {
+      setViewedUserId("");
+      setUserSessions([]);
+      setConversation([]);
+    }
+    await loadUsers();
+    await loadGaps();
+  }
+
+  async function updateGapStatus(gapId: string, status: string) {
+    await adminSetGapStatus(gapId, status);
+    await loadGaps();
+  }
+
+  async function viewGapConversation(gap: Gap) {
+    if (!gap.user_id || !gap.session_key) {
+      alert("This gap is not linked to a viewable conversation.");
+      return;
+    }
+    setViewedUserId(gap.user_id);
+    setUserSessions(await adminUserSessions(gap.user_id));
+    setConversation(await adminSessionMessages(gap.user_id, gap.session_key));
   }
 
   async function savePrompt() {
@@ -155,6 +200,13 @@ export default function AdminPage() {
                       >
                         View chats
                       </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => deleteUser(user.id, user.email)}
+                      >
+                        Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -162,6 +214,62 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium">Knowledge gaps</h2>
+        <p className="text-sm text-muted-foreground">
+          Questions our documents could not answer. Each one is logged for management to review and
+          add to the induction material.
+        </p>
+        {gaps.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No gaps logged yet.</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left">
+                <tr>
+                  <th className="p-2">Topic</th>
+                  <th className="p-2">Question</th>
+                  <th className="p-2">Asked by</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gaps.map((gap) => (
+                  <tr key={gap.id} className="border-t">
+                    <td className="p-2">{gap.topic}</td>
+                    <td className="p-2">{gap.question}</td>
+                    <td className="p-2">{gap.user_email || "(unknown)"}</td>
+                    <td className="p-2">
+                      <select
+                        className="rounded-md border bg-background px-2 py-1"
+                        value={gap.status}
+                        onChange={(event) => updateGapStatus(gap.id, event.target.value)}
+                      >
+                        {GAP_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => viewGapConversation(gap)}
+                      >
+                        View chat
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {viewedUserId && (

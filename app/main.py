@@ -10,10 +10,19 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.admin_store import get_user, list_users, set_user_password, set_user_role
+from app.admin_store import (
+    count_admins,
+    delete_user_and_data,
+    get_user,
+    list_users,
+    set_user_password,
+    set_user_role,
+)
 from app.auth import auth_backend, current_active_user, current_admin, current_trainer, fastapi_users
+from app.gap_store import get_gap, list_gaps, set_gap_status
 from app.kb_store import create_kb_entry, delete_kb_entry, get_kb_entry, list_kb_entries
 from app.models import (
+    GAP_STATUSES,
     KB_KIND_DOCUMENT,
     KB_KIND_MESSAGE,
     ROLE_ADMIN,
@@ -122,7 +131,13 @@ async def chat(request: ChatRequest, user: User = Depends(current_active_user)):
 
             answer_text = ""
             async for event in stream_grounded_answer(
-                db, history, cross_session_context, system_prompt, request.message
+                db,
+                history,
+                cross_session_context,
+                system_prompt,
+                request.message,
+                user.id,
+                request.session_id,
             ):
                 if event["t"] == "final":
                     answer_text = event["v"]
@@ -351,6 +366,56 @@ async def admin_delete_kb(entry_id: uuid.UUID, admin: User = Depends(current_adm
         await run_in_threadpool(remove_from_knowledge_base, str(entry.id))
         await delete_kb_entry(db, entry)
         return {"status": "deleted", "id": str(entry_id)}
+
+
+class GapStatusUpdate(BaseModel):
+    status: str
+
+
+@app.get("/admin/gaps")
+async def admin_list_gaps(admin: User = Depends(current_admin)):
+    async with async_session_maker() as db:
+        gaps = await list_gaps(db)
+        return [
+            {
+                "id": str(gap.id),
+                "topic": gap.topic,
+                "question": gap.question,
+                "status": gap.status,
+                "created_at": gap.created_at,
+                "user_email": email,
+                "user_id": str(gap.user_id) if gap.user_id else "",
+                "session_key": gap.session_key,
+            }
+            for gap, email in gaps
+        ]
+
+
+@app.post("/admin/gaps/{gap_id}/status")
+async def admin_set_gap_status(
+    gap_id: uuid.UUID, update: GapStatusUpdate, admin: User = Depends(current_admin)
+):
+    if update.status not in GAP_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid gap status.")
+    async with async_session_maker() as db:
+        gap = await get_gap(db, gap_id)
+        if gap is None:
+            raise HTTPException(status_code=404, detail="Gap not found.")
+        await set_gap_status(db, gap, update.status)
+        return {"id": str(gap_id), "status": update.status}
+
+
+@app.delete("/admin/users/{user_id}", status_code=204)
+async def admin_delete_user(user_id: uuid.UUID, admin: User = Depends(current_admin)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    async with async_session_maker() as db:
+        target_user = await get_user(db, user_id)
+        if target_user is None:
+            raise HTTPException(status_code=404, detail="User not found.")
+        if target_user.role == ROLE_ADMIN and await count_admins(db) <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin account.")
+        await delete_user_and_data(db, target_user)
 
 
 if __name__ == "__main__":

@@ -14,9 +14,10 @@ SITUATING_PROMPT = (
     "You are preparing a passage from an organisational document for retrieval. "
     "Write 2-3 sentences (under 100 tokens) that situate this passage within the document so it "
     "can be understood on its own. You MUST state any condition that limits when the passage "
-    "applies (for example: applies only during an emergency / AIIMS activation, only to casual "
-    "employees, only during probation, only to a specific band). If the passage states a general "
-    "rule with no such limit, say it is a general provision. Do not add facts that are not present.\n"
+    "applies (for example: applies only to casual employees, only during a probation period, only "
+    "to a particular role or band, or only in a specifically described situation). If the passage "
+    "states a general rule with no such limit, say it is a general provision. Do not add facts that "
+    "are not present.\n"
     "After the sentences, add two final lines in exactly this form:\n"
     "TITLE: <a short 2-6 word topic heading for this passage>\n"
     "SCOPE: general\n"
@@ -104,8 +105,11 @@ def context_header(unit: ClauseUnit, situating: SituatingResult) -> str:
     scope_line = "Scope: general provision."
     if situating.scope == "conditional":
         scope_line = f"Scope: conditional - applies only when {situating.condition}."
+    source_line = f"[{unit.source}] {effective_breadcrumb(unit, situating)}"
+    if unit.category:
+        source_line = f"[{unit.source} - {unit.category}] {effective_breadcrumb(unit, situating)}"
     return (
-        f"[{unit.source}] {effective_breadcrumb(unit, situating)}\n"
+        f"{source_line}\n"
         f"Context: {situating.prose}\n"
         f"{scope_line}"
     )
@@ -123,6 +127,7 @@ def chunks_for_unit(unit: ClauseUnit, situating: SituatingResult) -> list[Contex
                 raw_text=piece,
                 metadata={
                     "source": unit.source,
+                    "category": unit.category,
                     "clause_number": unit.clause_number,
                     "title": title,
                     "breadcrumb": breadcrumb,

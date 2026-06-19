@@ -40,7 +40,7 @@ def extract_text_from_upload(filename: str, data: bytes) -> str:
 
 def add_text_to_knowledge_base(text: str, source_label: str, trainer_name: str, kb_entry_id: str):
     splitter = SentenceSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    header = f"[Trainer-provided knowledge from {trainer_name}] {source_label}\nScope: general provision."
+    header = "[Knowledge added by management for induction]\nScope: general provision."
     index = get_index()
     for piece in splitter.split_text(text):
         document = Document(

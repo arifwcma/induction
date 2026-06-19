@@ -20,6 +20,7 @@ def build_clause_record(unit: ClauseUnit, situating: SituatingResult) -> dict:
     body = unit.body()
     return {
         "source": unit.source,
+        "category": unit.category,
         "clause_number": unit.clause_number,
         "title": effective_title(unit, situating),
         "breadcrumb": effective_breadcrumb(unit, situating),

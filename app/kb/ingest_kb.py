@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from app.config import get_settings
 from app.db import async_session_maker, create_db_and_tables
 from app.kb.bm25_index import save_corpus
+from app.kb.categories import load_category_objectives
 from app.kb.clause_model import build_clause_record
 from app.kb.contextual import situate_and_chunk
 from app.kb.parse import parse_document
@@ -14,15 +15,30 @@ from app.models import Clause
 from app.rag.engine import configure_models, get_vector_store
 
 
-def list_document_paths() -> list[Path]:
+SUPPORTED_SUFFIXES = (".pdf", ".docx", ".doc", ".json", ".txt")
+
+
+def list_categorised_documents() -> list[tuple[Path, str]]:
+    """Return (path, category) for every ingestible document.
+
+    Only the folders named in objectives.json count as induction categories,
+    so a holding folder or stray root file is never ingested. The walk is
+    recursive within each category folder."""
     documents_dir = Path(get_settings().documents_dir)
-    paths = []
-    for path in sorted(documents_dir.glob("*.*")):
-        if path.name.startswith("~$"):
+    objectives = load_category_objectives()
+
+    discovered: list[tuple[Path, str]] = []
+    for category in objectives:
+        category_dir = documents_dir / category
+        if not category_dir.is_dir():
+            print(f"  [skip] category '{category}' has no folder at {category_dir}")
             continue
-        if path.suffix.lower() in (".pdf", ".docx"):
-            paths.append(path)
-    return paths
+        for path in sorted(category_dir.rglob("*.*")):
+            if path.name.startswith("~$"):
+                continue
+            if path.suffix.lower() in SUPPORTED_SUFFIXES:
+                discovered.append((path, category))
+    return discovered
 
 
 def clear_vector_collection():
@@ -49,8 +65,10 @@ def ingest_knowledge_base():
     bm25_records = []
     clause_records = []
 
-    for document_path in list_document_paths():
+    for document_path, category in list_categorised_documents():
         units = parse_document(document_path)
+        for unit in units:
+            unit.category = category
         for unit, situating, chunks in situate_and_chunk(units):
             clause_records.append(build_clause_record(unit, situating))
             for chunk in chunks:

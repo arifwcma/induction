@@ -9,19 +9,20 @@ from app.rag.retrieval import Passage
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are the induction assistant for new employees at the Wimmera Catchment Management "
-    "Authority (Wimmera CMA). You help people understand organisational policies, procedures, and "
-    "the enterprise agreement.\n\n"
+    "Authority (Wimmera CMA). You help people understand the organisation's policies, procedures, "
+    "and induction materials.\n\n"
     "With each question you are given two things: (1) a knowledge base MAP listing the documents and "
     "the topics/sections each one covers, and (2) SOURCE MATERIAL - specific passages retrieved for "
     "this question.\n"
     "- The MAP is the authoritative, complete list of what exists. Use it to say what is covered, to "
-    "give overviews, to LIST and COUNT topics or section types (e.g. how many kinds of leave exist), "
-    "and to walk someone through topics. You may confidently enumerate and count items that appear in "
-    "the map. The map is structure, not rule detail - never quote specific rules, numbers, durations, "
-    "or entitlements from it.\n"
+    "give overviews, to LIST and COUNT topics or section types, and to walk someone through topics. "
+    "You may confidently enumerate and count items that appear in the map. The map is structure, not "
+    "rule detail - never quote specific rules, numbers, durations, or entitlements from it.\n"
     "- Use the SOURCE MATERIAL for every SUBSTANTIVE fact (a rule, amount, duration, eligibility, "
     "condition, or entitlement), and cite it.\n"
-    "- Never invent facts.\n\n"
+    "- Answer ONLY from the MAP and the SOURCE MATERIAL provided here. Do NOT use outside or general "
+    "knowledge, and never invent or guess facts. If the material does not contain what is needed, "
+    "say so plainly rather than filling the gap from general knowledge.\n\n"
     "How to respond (use judgement, be genuinely helpful):\n"
     "- Greetings or 'what can you help with': briefly say what you cover (draw on the map) and invite "
     "a question.\n"
@@ -30,39 +31,31 @@ DEFAULT_SYSTEM_PROMPT = (
     "tour. Give it - briefly say what you cover and walk through the main topic areas from the map, "
     "then let the person pick where to go deeper. NEVER say you cannot give a tour, that tours are "
     "not in the materials, or to ask someone else: the tour simply IS this walkthrough of the topics.\n"
-    "- Broad or open topics ('tell me about leave and breaks', 'lets talk about leaves', 'give me an "
-    "overall idea', 'how many types of leave are there'): ALWAYS give a concise overview FIRST - a "
-    "few sentences or a short list of the relevant topics from the map plus any substance from the "
-    "source material - and THEN, if useful, ask one focused follow-up. NEVER reply with only a "
-    "clarifying question and no overview.\n"
+    "- Broad or open topics: ALWAYS give a concise overview FIRST - a few sentences or a short list "
+    "of the relevant topics from the map plus any substance from the source material - and THEN, if "
+    "useful, ask one focused follow-up. NEVER reply with only a clarifying question and no overview.\n"
     "- Specific questions: answer directly and concisely from the source material, with citations.\n"
     "- Ask a clarifying question only AFTER you have given at least a short overview or partial "
-    "answer; never make a clarifying question your entire reply.\n"
-    "- Out of scope (e.g. IT passwords, building keys, personal HR cases): say plainly it is not "
-    "covered by the induction materials and point them to their manager or People & Culture.\n\n"
+    "answer; never make a clarifying question your entire reply.\n\n"
     "Be concise and plain. Use the conversation so far; do not re-ask what the person already told you.\n\n"
-    "Choosing the governing rule (critical for correctness):\n"
+    "Choosing the governing rule (apply generally, to any topic):\n"
     "- Each source passage states its SCOPE. A passage marked 'general' applies to ordinary "
     "situations. A passage marked 'conditional' applies ONLY when its stated condition is actually "
     "true for the asked situation.\n"
     "- Never apply a conditional passage to a situation where its condition does not hold. If the "
     "question describes an ordinary situation, use the general provision even if a conditional "
     "passage looks textually similar.\n"
-    "- Provisions about emergency work, incident response, or AIIMS activation (including any "
-    "appendix marked conditional) apply ONLY when the employee's own situation is an actual "
-    "emergency activation. For ordinary day-to-day questions you MUST ignore those provisions "
-    "entirely and answer only from the general provisions, even if the emergency text matches the "
-    "wording more closely. Do not cite numbering that appears inside such an appendix.\n"
-    "- When provisions interact, the more specific governing provision wins; and where the National "
-    "Employment Standards (NES) give a greater benefit, the NES prevails (see clause 4.3).\n"
+    "- When provisions interact, the more specific governing provision wins; and where a higher or "
+    "overriding standard provides a greater benefit, that greater benefit applies.\n"
     "- If you rely on a conditional provision, state the condition explicitly.\n\n"
     "Citing sources:\n"
-    "- For every substantive factual claim, cite the clause number or section and the document it "
-    "came from. If information came from trainer-added knowledge, say so.\n"
+    "- For every substantive factual claim, cite the section or clause and the document it came from. "
+    "If a fact came from knowledge a trainer added, attribute it as learned from management rather "
+    "than from a named document.\n"
     "- For overviews or navigation drawn from the map, you do not need clause citations - just name "
     "the topics or sections.\n\n"
-    "If the source material does not contain a specific answer the person needs, say so plainly and "
-    "point them to their manager or People & Culture rather than guessing."
+    "If the source material does not contain a specific answer the person needs, say so plainly "
+    "rather than guessing."
 )
 
 CONDENSE_INSTRUCTION = (
@@ -71,11 +64,10 @@ CONDENSE_INSTRUCTION = (
     "possible.\n"
     "IMPORTANT - carry-over rule (apply ONLY when it clearly fits): if the follow-up has NO topic of "
     "its own and merely asks about a new SITUATION or CONDITION applied to what was just discussed "
-    "(for example 'what would be the case during emergency work', 'what if I'm a casual', 'and on a "
-    "public holiday?'), carry the prior topic in so the question is specific. For example, after a "
-    "question about whether a lunch/meal break counts as worked hours, rewrite 'what would be the "
-    "case during emergency work' as 'During emergency work, does a meal break count as worked "
-    "hours?'.\n"
+    "(for example 'what if I'm a casual', 'and on a public holiday?', 'what about during probation?'), "
+    "carry the prior topic in so the question is specific. For example, after a question about whether "
+    "a lunch/meal break counts as worked hours, rewrite 'what about for part-time staff' as 'For "
+    "part-time staff, does a meal break count as worked hours?'.\n"
     "Do NOT apply the carry-over rule when the follow-up names its OWN topic or switches subject "
     "(for example 'lets talk about the short tours', 'tell me about leave', 'give me an overview of "
     "X'): keep that topic as-is and do not inject earlier topics into it.\n"
@@ -97,6 +89,31 @@ UNSURE_RESPONSE = (
     "I could not find this clearly in the induction material, so I do not want to guess. Could you "
     "rephrase, or tell me which policy or situation you mean? For anything personal or not covered "
     "by the documents, your manager or People & Culture is the right place to ask."
+)
+
+GAP_RESPONSE = (
+    "Our induction documents don't currently include guidance on this, so I don't want to guess "
+    "from general knowledge. I've made a note of it for the management team to review and add to "
+    "the induction material. In the meantime, your manager or People & Culture can help with "
+    "anything urgent."
+)
+
+GAP_CLASSIFIER_INSTRUCTION = (
+    "An employee asked an internal induction assistant the question below, and we must decide "
+    "whether the organisation's documents can address it AT ALL.\n\n"
+    "You are given the KNOWLEDGE BASE MAP - the authoritative, complete list of the documents we "
+    "hold and the topics/sections each one covers.\n\n"
+    "Decide whether the question is about a subject our documents COVER.\n"
+    "- Answer IN_SCOPE for anything related to a topic that appears in the map; for greetings; for "
+    "questions about what you can help with; for requests for an overview or a guided tour; and for "
+    "questions about the conversation itself. DEFAULT to IN_SCOPE whenever you are unsure.\n"
+    "- Answer OUT_OF_SCOPE only when the question is clearly about a subject that NONE of the "
+    "documents address - for example IT passwords, building access codes, an individual's personal "
+    "HR case, or a matter unrelated to this organisation's policies and induction.\n\n"
+    "Knowledge base map:\n{kb_map}\n\nQuestion:\n{question}\n\n"
+    "Reply with exactly two lines:\n"
+    "VERDICT: in_scope OR out_of_scope\n"
+    "TOPIC: <a short 2-6 word topic of the question>"
 )
 
 VERIFIER_INSTRUCTION = (
@@ -159,6 +176,12 @@ class VerifierVerdict:
     reason: str
 
 
+@dataclass
+class GapVerdict:
+    is_gap: bool
+    topic: str
+
+
 def build_llm(attempt: int = 0) -> LLM:
     """Answer-lane LLM (the strong model, e.g. Opus 4.8) for user-facing answers."""
     return make_llm(attempt=attempt)
@@ -193,12 +216,12 @@ def build_search_query(llm: LLM, question: str) -> str:
 SPLIT_INSTRUCTION = (
     "An employee asked the question below. A single message sometimes bundles SEVERAL distinct "
     "sub-questions - for example an ordinary-situation question AND a 'what about during X' "
-    "question, where X is a special situation such as emergency work, being a casual, or probation.\n\n"
+    "question, where X is a special situation such as a public holiday, being a casual, or probation.\n\n"
     "Break the message into the distinct sub-questions it genuinely contains. Rules:\n"
     "- If it asks only ONE thing, return that one question unchanged.\n"
     "- Make every sub-question SELF-CONTAINED: carry the shared topic and scenario into each one so it "
-    "stands on its own (e.g. 'During emergency work, does the meal break count as worked hours?' "
-    "rather than just 'what about emergency work?').\n"
+    "stands on its own (e.g. 'On a public holiday, does the meal break count as worked hours?' "
+    "rather than just 'what about on a public holiday?').\n"
     "- Do NOT invent sub-questions that were not asked; preserve the employee's meaning.\n"
     "- Return ONE sub-question per line, no numbering, no preamble.\n\n"
     "Question:\n{question}\n\nSub-questions:"
@@ -241,7 +264,7 @@ def passage_scope_line(metadata: dict) -> str:
 
 def passage_label(metadata: dict) -> str:
     if metadata.get("origin") == "trainer":
-        return f"{metadata.get('source', 'trainer note')} (trainer-provided)"
+        return "learned from management"
     source = metadata.get("source", "document")
     clause_number = metadata.get("clause_number")
     if clause_number:
@@ -327,6 +350,28 @@ async def generate_answer_stream(
     async for chunk in response:
         if chunk.delta:
             yield chunk.delta
+
+
+def classify_gap(llm: LLM, question: str, kb_map: str) -> GapVerdict:
+    """Decide whether a question is about something the documents simply do not
+    cover (a genuine knowledge gap) before we spend a retrieval+answer cycle on
+    it. The KB MAP is authoritative for what exists, so this is a reliable,
+    seedable fast-lane check; it defaults to in-scope to avoid refusing a
+    question the documents can actually answer."""
+    prompt = GAP_CLASSIFIER_INSTRUCTION.format(kb_map=kb_map or "(none)", question=question)
+    output = llm.complete(prompt).text.strip()
+
+    verdict_line = ""
+    topic = ""
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.upper().startswith("VERDICT:"):
+            verdict_line = stripped[len("VERDICT:"):].strip().lower()
+        elif stripped.upper().startswith("TOPIC:"):
+            topic = stripped[len("TOPIC:"):].strip()
+
+    is_gap = "out_of_scope" in verdict_line or "out of scope" in verdict_line
+    return GapVerdict(is_gap=is_gap, topic=topic or question[:120])
 
 
 def verify_answer(

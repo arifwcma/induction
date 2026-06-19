@@ -1,0 +1,152 @@
+{
+    "organisation": "Wimmera CMA",
+    "lastUpdated": "2026-05-18",
+    "hierarchy": {
+      "name": "Wimmera CMA Board",
+      "children": [
+        {
+          "name": "David Brennan",
+          "title": "Chief Executive Officer",
+          "children": [
+            {
+              "department": "Corporate",
+              "children": [
+                {
+                  "name": "Nicole Netherway",
+                  "title": "Business Manager",
+                  "children": [
+                    {
+                      "name": "Sable Jacobson",
+                      "title": "Corporate Support"
+                    },
+                    {
+                      "name": "Kate Ward",
+                      "title": "Digital Systems & Communications Analyst"
+                    }
+                  ]
+                },
+                {
+                  "name": "Camille Butler",
+                  "title": "Chief Financial Officer (CFO)",
+                  "children": [
+                    {
+                      "name": "Necia Borgas",
+                      "title": "Finance Officer"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "department": "Community Delivery",
+              "manager": {
+                "name": "Joel Boyd",
+                "title": "Community Delivery Manager"
+              },
+              "children": [
+                {
+                  "name": "Savio PK",
+                  "title": "GIS and Spatial Data Lead"
+                },
+                {
+                  "name": "Arif Rahman",
+                  "title": "Analyst Programmer"
+                },
+                {
+                  "name": "Tracey Rigney",
+                  "title": "Catchment Management Officer"
+                },
+                {
+                  "name": "Vacant",
+                  "title": "Cultural & Natural Resource Officer"
+                },
+                {
+                  "name": "Bronwyn Bant",
+                  "title": "Sustainable Agriculture Facilitator"
+                },
+                {
+                  "name": "Alicia Merriam",
+                  "title": "Community Delivery Support Officer"
+                },
+                {
+                  "name": "Marney Durie",
+                  "title": "Landcare Facilitator"
+                },
+                {
+                  "name": "Jen Gao",
+                  "title": "Landcare Facilitator - Wimmera"
+                },
+                {
+                  "name": "David Brunton",
+                  "title": "Natural Capital Project Officer"
+                },
+                {
+                  "name": "Vacant",
+                  "title": "Landcare Facilitator - West Wimmera"
+                }
+              ]
+            },
+            {
+              "department": "Operational Delivery",
+              "manager": {
+                "name": "Luke Austin",
+                "title": "Operational Delivery Manager"
+              },
+              "children": [
+                {
+                  "name": "Bruce McInnes",
+                  "title": "Community Project Facilitator"
+                },
+                {
+                  "name": "Graeme Eldridge",
+                  "title": "Community Project Facilitator"
+                },
+                {
+                  "name": "Bryana Bisset",
+                  "title": "Project Management Officer"
+                },
+                {
+                  "name": "Ewan Weaver",
+                  "title": "Catchment Management Graduate"
+                }
+              ]
+            },
+            {
+              "department": "Statutory and Strategic",
+              "manager": {
+                "name": "Tony Baker",
+                "title": "Statutory and Strategy Manager"
+              },
+              "linkedTo": "VIC Catchments",
+              "children": [
+                {
+                  "name": "Deb Nitschke",
+                  "title": "Planning & Policy Officer - Water & Waterways"
+                },
+                {
+                  "name": "Jacqui Norris",
+                  "title": "Planning & Policy Advisor"
+                },
+                {
+                  "name": "Dean Lawson",
+                  "title": "NRM Strategic Planning Officer / IWM Officer"
+                },
+                {
+                  "name": "Paris Fiedler",
+                  "title": "Catchment Management Graduate / IWM Officer"
+                },
+                {
+                  "name": "Shane Papworth",
+                  "title": "Planning & Policy Advisor"
+                },
+                {
+                  "name": "Vacant",
+                  "title": "Catchment Management Graduate"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }

@@ -28,6 +28,17 @@ export type KBEntry = {
   created_at: string;
 };
 
+export type Gap = {
+  id: string;
+  topic: string;
+  question: string;
+  status: string;
+  created_at: string;
+  user_email: string;
+  user_id: string;
+  session_key: string;
+};
+
 async function request(path: string, options: RequestInit = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     credentials: "include",
@@ -137,6 +148,10 @@ export async function adminResetPassword(userId: string, newPassword: string): P
   });
 }
 
+export async function adminDeleteUser(userId: string): Promise<void> {
+  await request(`/admin/users/${userId}`, { method: "DELETE" });
+}
+
 export async function adminUserSessions(userId: string): Promise<SessionSummary[]> {
   return request(`/admin/users/${userId}/sessions`);
 }
@@ -166,4 +181,16 @@ export async function adminListKB(): Promise<KBEntry[]> {
 
 export async function adminDeleteKB(entryId: string): Promise<void> {
   await request(`/admin/kb/${entryId}`, { method: "DELETE" });
+}
+
+export async function adminListGaps(): Promise<Gap[]> {
+  return request("/admin/gaps");
+}
+
+export async function adminSetGapStatus(gapId: string, status: string): Promise<void> {
+  await request(`/admin/gaps/${gapId}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
 }

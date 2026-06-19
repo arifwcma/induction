@@ -61,6 +61,7 @@ class Clause(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     source: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), default="", nullable=False)
     clause_number: Mapped[str] = mapped_column(String(40), default="", nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     breadcrumb: Mapped[str] = mapped_column(Text, default="", nullable=False)
@@ -79,10 +80,32 @@ class TrainerKBEntry(Base):
     __tablename__ = "trainer_kb_entry"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    trainer_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("user.id"), nullable=False, index=True)
+    trainer_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("user.id"), nullable=True, index=True
+    )
     trainer_name: Mapped[str] = mapped_column(String(255), nullable=False)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     source_label: Mapped[str] = mapped_column(String(255), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+GAP_STATUS_OPEN = "open"
+GAP_STATUS_REVIEWED = "reviewed"
+GAP_STATUS_DISMISSED = "dismissed"
+GAP_STATUSES = {GAP_STATUS_OPEN, GAP_STATUS_REVIEWED, GAP_STATUS_DISMISSED}
+
+
+class KnowledgeGap(Base):
+    __tablename__ = "knowledge_gap"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("user.id"), nullable=True, index=True
+    )
+    session_key: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    topic: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default=GAP_STATUS_OPEN, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

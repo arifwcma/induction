@@ -9,6 +9,7 @@ structured documents. It is a MAP only -- never a source of factual content.
 
 from sqlalchemy import select
 
+from app.kb.categories import load_category_objectives
 from app.models import Clause
 
 
@@ -35,28 +36,60 @@ def document_section_labels(clauses: list[Clause], source: str) -> list[str]:
     return ordered_labels
 
 
-def render_outline(clauses: list[Clause]) -> str:
+def render_documents(clauses: list[Clause], indent: str) -> str:
     sources = []
     for clause in clauses:
         if clause.source not in sources:
             sources.append(clause.source)
     sources.sort()
 
-    blocks = []
+    lines = []
     for source in sources:
         labels = document_section_labels(clauses, source)
         if not labels:
             continue
         document_name = source.rsplit(".", 1)[0]
-        listed = "\n".join(f"  - {label}" for label in labels)
-        blocks.append(f"{document_name}:\n{listed}")
+        lines.append(f"{indent}{document_name}:")
+        for label in labels:
+            lines.append(f"{indent}  - {label}")
+    return "\n".join(lines)
+
+
+def ordered_categories(clauses: list[Clause], objectives: dict[str, str]) -> list[str]:
+    present = []
+    for category in objectives:
+        if any(clause.category == category for clause in clauses):
+            present.append(category)
+    for clause in clauses:
+        if clause.category and clause.category not in present:
+            present.append(clause.category)
+    return present
+
+
+def render_outline(clauses: list[Clause]) -> str:
+    objectives = load_category_objectives()
+
+    blocks = []
+    for category in ordered_categories(clauses, objectives):
+        category_clauses = [clause for clause in clauses if clause.category == category]
+        documents = render_documents(category_clauses, "  ")
+        if not documents:
+            continue
+        objective = objectives.get(category, "")
+        heading = f"{category} - {objective}" if objective else category
+        blocks.append(f"{heading}:\n{documents}")
+
+    uncategorised = [clause for clause in clauses if not clause.category]
+    leftover = render_documents(uncategorised, "  ")
+    if leftover:
+        blocks.append(f"Other:\n{leftover}")
 
     if not blocks:
         return ""
 
     return (
-        "Knowledge base map (the documents available and the topics each covers). "
-        "Use this only to understand what exists and to guide overviews or a walkthrough; "
+        "Knowledge base map (the induction categories, the documents in each, and the topics each "
+        "covers). Use this only to understand what exists and to guide overviews or a walkthrough; "
         "it is NOT a source of factual answers -- never quote rules from it.\n\n"
         + "\n\n".join(blocks)
     )
