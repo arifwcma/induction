@@ -1,3 +1,0 @@
-  [skip] Drugs and Alcohol Policy  - OPS.doc: LibreOffice (soffice) not found; cannot read .doc files.
-  [skip] EEO  Anti discrimination Harassment and Bullying Policy - OPS.doc: LibreOffice (soffice) not found; cannot read .doc files.
-Ingested 446 contextual chunks, 418 clauses, 446 BM25 records.

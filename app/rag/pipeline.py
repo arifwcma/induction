@@ -27,6 +27,39 @@ from app.rag.retrieval import Passage, dedup_key, retrieve_relevant_passages
 
 DRAFT_ATTEMPTS = 2
 
+# Transient provider failures (e.g. Anthropic 529 "overloaded" arriving mid-stream,
+# which the SDK's request-level max_retries does not cover) should self-heal rather
+# than break the user's turn. Retry the draft a few times with backoff before giving
+# up; a partial draft is cleared with a reset first.
+TRANSIENT_DRAFT_RETRIES = 4
+TRANSIENT_BACKOFF_SECONDS = (1, 3, 6, 12)
+
+
+def _is_transient_llm_error(error: BaseException) -> bool:
+    text = str(error).lower()
+    transient_markers = (
+        "overloaded",
+        "rate_limit",
+        "rate limit",
+        "timeout",
+        "timed out",
+        "temporarily",
+        "529",
+        "503",
+        "502",
+        "500",
+    )
+    if any(marker in text for marker in transient_markers):
+        return True
+    return type(error).__name__ in {
+        "APIConnectionError",
+        "APITimeoutError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+        "OverloadedError",
+        "RateLimitError",
+    }
+
 # How often to re-emit the current status while a silent step runs. The
 # mechanical block (condense -> split -> retrieve -> applicability) and the
 # agentic re-retrieval send no bytes to the client; on a slow run that silent
@@ -164,11 +197,23 @@ async def _stream_drafts_and_verify(
             yield {"t": "status", "v": "Refining your answer…"}
 
         draft = ""
-        async for token in generate_answer_stream(
-            system_prompt, history, context_block, message, kb_map, attempt
-        ):
-            draft += token
-            yield {"t": "delta", "v": token}
+        for transient_attempt in range(TRANSIENT_DRAFT_RETRIES + 1):
+            draft = ""
+            try:
+                async for token in generate_answer_stream(
+                    system_prompt, history, context_block, message, kb_map, attempt
+                ):
+                    draft += token
+                    yield {"t": "delta", "v": token}
+                break
+            except Exception as error:
+                if not _is_transient_llm_error(error) or transient_attempt == TRANSIENT_DRAFT_RETRIES:
+                    raise
+                yield {"t": "reset"}
+                yield {"t": "status", "v": "The answer service is busy; retrying…"}
+                await asyncio.sleep(
+                    TRANSIENT_BACKOFF_SECONDS[min(transient_attempt, len(TRANSIENT_BACKOFF_SECONDS) - 1)]
+                )
 
         verdict = await run_in_threadpool(
             verify_answer, context_block, standalone_question, draft, kb_map, history

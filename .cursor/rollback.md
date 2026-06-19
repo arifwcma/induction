@@ -2,6 +2,8 @@
 
 A known-good checkpoint of the induction chatbot. If a later change breaks things, return to this exact state.
 
+> POST-`m1-stable` note (Phase 6 — category-aware ingestion, generic prompts, reactive Gaps, admin delete-user): these changes touched `app/kb/**`, the prompts, the clause/gap schema, and `documents/` (now category folders). Rolling BACK to `m1-stable` from Phase 6 therefore needs BOTH a re-ingest AND a `reset_prompt` (see steps below), and the documents must be in the layout `m1-stable` expects. Rolling FORWARD onto Phase 6 needs the startup column migration (automatic), a full re-ingest, and `reset_prompt`.
+
 ## What this checkpoint is
 
 1. Tag: `m1-stable`

@@ -115,11 +115,19 @@ Phase 4 (model upgrade + hybrid split + agentic retrieval + streaming; NO re-ing
 - Agentic re-retrieval: refine query + re-retrieve + retry once before abstaining.
 - Real streaming: `/chat` now emits newline-delimited JSON frames (`status`/`delta`/`reset`/`final`); the verifier still gates (unverified draft is reset/replaced). New deps: `llama-index-llms-anthropic==0.11.4`. New env: `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_CHAT_MODEL`, `FAST_LLM_PROVIDER`, `FAST_CHAT_MODEL`. Deploy = `update.sh` (no ingestion change). Eval 9/9 on Opus 4.8.
 
+Phase 6 (category-aware ingestion + generic prompts + Gaps + admin user-deletion; POST-`m1-stable`; requires re-ingest + migration):
+- Category-aware, multi-format ingestion: `documents/` reorganised into category folders driven by `objectives.json`; six file types (`.pdf`, `.docx`, `.doc` via LibreOffice, `.json` flatten, `link_*.txt` URL fetch via trafilatura, `.txt`); `clause.category` column; KB MAP grouped by category with objectives. New deps: `trafilatura`; backend image adds `libreoffice-writer`.
+- Generic prompts: ALL document-specific instructions removed from `DEFAULT_SYSTEM_PROMPT` and the condense/split/situating examples (no emergency/AIIMS/NES/clause-numbers). Scope/precedence stated generically only. Explicit no-general-knowledge rule. The emergency scope cases now pass on the generic mechanisms alone (verified). Per Arif's instruction, future misses are fixed generically, not by re-coupling the prompt to a document.
+- Reactive Gaps: a fast-lane `classify_gap` gate checks each question against the KB MAP; genuinely out-of-scope questions log a `KnowledgeGap` (with a link to the conversation) and return a fixed "noted for management" message instead of guessing. Admin Gaps view + status. (Proactive Gaps deferred — see `.cursor/to_discuss.md`.)
+- Attribution: trainer-contributed facts are surfaced as "learned from management".
+- Admin: `DELETE /admin/users/{id}` cascades the user's sessions/messages/gaps, nulls `trainer_id` on their KB entries (knowledge survives), and refuses self/last-admin deletion. Admin-is-trainer already held.
+- Robustness: idempotent startup column migration (`app/db_migrate.py`); answer-lane retry on transient provider overload (Anthropic 529 mid-stream). Deploy = `hard_update.sh` + `reset_prompt`. Re-ingest ~446 chunks / ~418 clauses.
+
 ### New backend endpoints (for the frontend to consume)
 - Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.
 - Chat (login required): `POST /chat` (stream); `GET /sessions`; `GET /sessions/{id}/messages`.
 - Trainer: `POST /kb/text`, `POST /kb/document`.
-- Admin: `GET /admin/prompt`, `PUT /admin/prompt`, `GET /admin/users`, `POST /admin/users/{id}/role`, `POST /admin/users/{id}/reset-password`, `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sessions/{sid}/messages`, `GET /admin/kb`, `DELETE /admin/kb/{id}`.
+- Admin: `GET /admin/prompt`, `PUT /admin/prompt`, `GET /admin/users`, `POST /admin/users/{id}/role`, `POST /admin/users/{id}/reset-password`, `DELETE /admin/users/{id}` (cascade), `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sessions/{sid}/messages`, `GET /admin/kb`, `DELETE /admin/kb/{id}`, `GET /admin/gaps`, `POST /admin/gaps/{id}/status`.
 - All browser calls must send `credentials: "include"` (httpOnly cookie auth).
 
 ### Decisions made when Arif skipped the auth questions (defaults applied)
@@ -140,8 +148,9 @@ Phase 4 (model upgrade + hybrid split + agentic retrieval + streaming; NO re-ing
 8. Packaging: Docker + Docker Compose (app + frontend + Qdrant + Postgres).
 
 ## Documents
-- Supported formats: PDF and DOCX (plus TXT for trainer uploads). Legacy `.doc` must be converted to `.docx` first.
-- Re-ingest after adding/changing documents.
+- `documents/` is organised into progressive CATEGORY folders; `documents/objectives.json` defines the categories + their objectives and is the SOURCE OF TRUTH for what gets ingested (folders not listed there, and root files, are skipped).
+- Six ingestible file types per category: `.pdf`, `.docx`, `.doc` (auto-converted via headless LibreOffice), `.json` (flattened to text), `link_*.txt` (single-URL fetch via trafilatura, no recursion), plain `.txt`. Trainer uploads still accept PDF/DOCX/TXT.
+- Every clause carries its `category`; the KB MAP is grouped by category with each category's objective. Re-ingest after adding/changing documents.
 
 ## Hosting / Deployment
 - Domain https://induction.wcma.work/. Same AWS EC2 server and conventions as the RCS bot (see `C:\Users\m.rahman\src\playground_details`). Separate compose service names (`induction`, `induction-frontend`), separate path, separate domain. Adding Postgres increases the server footprint — size during prod-hardening.
