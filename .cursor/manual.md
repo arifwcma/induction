@@ -67,7 +67,8 @@ Run these from the project root (`induction`), not as always-on terminals.
 | Task | Command | Notes |
 |---|---|---|
 | Seed/ensure admin user | `.\.venv\Scripts\python.exe -m app.seed_admin` | Idempotent. Run once after a fresh DB. |
-| Full knowledge-base ingest | `.\.venv\Scripts\python.exe -m app.kb.ingest_kb` | SLOW + costs API. See warning below. |
+| Full knowledge-base ingest | `.\.venv\Scripts\python.exe -m app.kb.ingest_kb` | SLOW + costs API. Full DESTRUCTIVE rebuild. See warning below. |
+| Add ONE document (no full rebuild) | `.\.venv\Scripts\python.exe -m app.ingest_one "<path>" [category]` | APPENDS one file to Qdrant + BM25 + clause table. Restart backend after so the BM25/KB-map caches reload. Not idempotent (re-running a file duplicates it). Category defaults to the file's top-level folder under `documents/`. |
 | Rebuild clause table only (cheap recovery) | `.\.venv\Scripts\python.exe -m app.kb.store_clauses_from_corpus` | ~2s, no API cost. Uses existing `kb_index/`. |
 | Reset system prompt to current default | `.\.venv\Scripts\python.exe -m app.reset_prompt` | Run after ANY change to `DEFAULT_SYSTEM_PROMPT`. The prompt is stored in the DB and seeded ONCE — code edits do NOT reach a running deployment until you run this. Overwrites the stored (incl. admin-edited) prompt. |
 | Run reliability eval | `.\.venv\Scripts\python.exe -m app.eval_harness` | A few minutes. Should be 11/11. Opus can return a transient `overloaded_error` (529) under load — just re-run. |
@@ -79,6 +80,7 @@ Run these from the project root (`induction`), not as always-on terminals.
 - It is a **full rebuild, no duplication**: it wipes the Qdrant collection, overwrites the BM25 corpus, and replaces the clause table.
 - It **finishes and exits** (not a server) — prints `Ingested N contextual chunks, N clauses, N BM25 records.` when done (currently ~446 chunks / ~418 clauses across the five category folders; the two `.doc` files are included only when LibreOffice is present, i.e. in the container).
 - **It erases trainer-added KB** (anything trainers added live via the app), because it deletes the whole Qdrant collection. Only the files in `documents/` are re-ingested.
+- **On the server it OOMs at the 512M container cap** — temporarily raise `induction`'s memory (a `compose.override.yaml` with `deploy.resources.limits.memory: 3G`), ingest, then restore 512M. To top up just one or two files instead, use `app.ingest_one` (light, no bump needed).
 - The KB MAP (used for overviews/"how many"/tour) is rebuilt from the clause table, so it refreshes automatically after ingest.
 
 ## What to re-do after a change

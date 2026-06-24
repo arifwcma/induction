@@ -198,6 +198,7 @@ Constants: dense top 20, BM25 top 20, rerank top 8, chunk 700/150, situating <10
 - `app/kb/bm25_index.py`: on-disk BM25 corpus in `kb_index/`.
 - `app/kb/ingest_kb.py`: full ingest — `list_categorised_documents()` (objectives.json category walk) → `parse_document` (suffix dispatch: pdf/docx/doc/json/link_txt/txt) → thread `category` → situate/chunk → embed to Qdrant + save BM25 + persist clause table. `python -m app.kb.ingest_kb`.
 - `app/kb/store_clauses_from_corpus.py`: cheap clause-table rebuild from the saved BM25 corpus (no LLM cost) — recovery if an ingest dies after the expensive situating step.
+- `app/ingest_one.py`: incremental APPEND of one document to the live stores (Qdrant + BM25 + clause table) without the destructive full rebuild — `python -m app.ingest_one "<path>" [category]`; restart the backend afterwards to reload the cached BM25 index + KB map.
 - `app/chat_store.py`, `app/config_store.py`, `app/kb_store.py`, `app/admin_store.py`: async DB helpers (incl. `delete_owned_session`).
 - `app/trainer_kb.py`: upload extraction + KB embed/remove.
 - `app/admin_store.py`: also `count_admins` + `delete_user_and_data` (cascade sessions/messages/gaps, null `trainer_id`).
