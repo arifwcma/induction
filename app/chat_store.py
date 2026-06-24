@@ -4,7 +4,7 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ChatMessageRecord, ChatSession
+from app.models import ChatMessageRecord, ChatSession, KnowledgeGap
 
 
 MAX_PROFILE_SESSIONS = 10
@@ -117,12 +117,20 @@ async def delete_owned_session(
     """Delete a session (and its messages) if it belongs to the user.
 
     Returns True if a session was found and deleted, False otherwise. There is no
-    DB-level cascade, so the message rows are removed explicitly first."""
+    DB-level cascade, so the message rows are removed explicitly first. Knowledge
+    gaps logged from this conversation are removed too, so they do not outlive the
+    chat they came from (the gap's session_key is the session's client_key)."""
     chat_session = await get_owned_session(db, user_id, client_key)
     if chat_session is None:
         return False
     await db.execute(
         delete(ChatMessageRecord).where(ChatMessageRecord.session_id == chat_session.id)
+    )
+    await db.execute(
+        delete(KnowledgeGap).where(
+            KnowledgeGap.user_id == user_id,
+            KnowledgeGap.session_key == client_key,
+        )
     )
     await db.delete(chat_session)
     await db.commit()

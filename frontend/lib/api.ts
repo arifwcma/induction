@@ -26,7 +26,12 @@ export type KBEntry = {
   filename: string;
   trainer_name: string;
   created_at: string;
+  downloadable: boolean;
 };
+
+export function kbDownloadUrl(entryId: string): string {
+  return `${API_URL}/admin/kb/${entryId}/download`;
+}
 
 export type Gap = {
   id: string;
@@ -146,15 +151,6 @@ export async function saveTrainerFile(text: string): Promise<void> {
   });
 }
 
-export async function getPendingCount(): Promise<number> {
-  const result = await request("/kb/pending");
-  return result.count as number;
-}
-
-export async function applyPendingKB(): Promise<number> {
-  const result = await request("/kb/apply-pending", { method: "POST" });
-  return result.applied as number;
-}
 
 export async function adminListUsers(): Promise<CurrentUser[]> {
   return request("/admin/users");

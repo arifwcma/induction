@@ -14,10 +14,8 @@ import { Button } from "@/components/ui/button";
 import { TrainerProvider } from "@/lib/trainer-context";
 import {
   API_URL,
-  applyPendingKB,
   deleteSession,
   fetchCurrentUser,
-  getPendingCount,
   getSessionMessages,
   listSessions,
   logout,
@@ -186,8 +184,6 @@ export const Assistant = () => {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
   const [initialMessages, setInitialMessages] = useState<ThreadMessageLike[]>(WELCOME_THREAD);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [applying, setApplying] = useState(false);
   const [kbOpen, setKbOpen] = useState(false);
   const [kbLoading, setKbLoading] = useState(false);
   const [kbDraft, setKbDraft] = useState("");
@@ -203,14 +199,6 @@ export const Assistant = () => {
     }
   }, []);
 
-  const refreshPending = useCallback(async () => {
-    try {
-      setPendingCount(await getPendingCount());
-    } catch {
-      setPendingCount(0);
-    }
-  }, []);
-
   useEffect(() => {
     (async () => {
       const currentUser = await fetchCurrentUser();
@@ -220,11 +208,8 @@ export const Assistant = () => {
       }
       setUser(currentUser);
       await refreshSessions();
-      if (currentUser.role === "trainer" || currentUser.role === "admin") {
-        await refreshPending();
-      }
     })();
-  }, [router, refreshSessions, refreshPending]);
+  }, [router, refreshSessions]);
 
   async function openSession(selectedId: string) {
     const stored = await getSessionMessages(selectedId);
@@ -265,31 +250,13 @@ export const Assistant = () => {
     }
     try {
       await uploadDocumentToKB(file);
-      await refreshPending();
-      alert(`"${file.name}" is queued. Click "Apply pending" to add it to the knowledge base.`);
+      alert(`"${file.name}" was added. It becomes searchable in a few seconds.`);
     } catch (uploadError) {
       alert(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
       if (uploadInputRef.current) {
         uploadInputRef.current.value = "";
       }
-    }
-  }
-
-  async function handleApplyPending() {
-    setApplying(true);
-    try {
-      const applied = await applyPendingKB();
-      await refreshPending();
-      alert(
-        applied > 0
-          ? `Applied ${applied} item${applied === 1 ? "" : "s"} to the knowledge base.`
-          : "There was nothing pending to apply.",
-      );
-    } catch (applyError) {
-      alert(applyError instanceof Error ? applyError.message : "Could not apply pending knowledge.");
-    } finally {
-      setApplying(false);
     }
   }
 
@@ -326,7 +293,6 @@ export const Assistant = () => {
     setKbSaving(true);
     try {
       await saveTrainerFile(kbDraft);
-      await refreshPending();
       closeKb();
     } catch {
       alert("Could not save this knowledge.");
@@ -345,12 +311,7 @@ export const Assistant = () => {
   const canTrain = user.role === "trainer" || user.role === "admin";
 
   return (
-    <TrainerProvider
-      canTrain={canTrain}
-      sessionId={sessionId}
-      refreshPending={refreshPending}
-      openAddToKb={openAddToKb}
-    >
+    <TrainerProvider canTrain={canTrain} sessionId={sessionId} openAddToKb={openAddToKb}>
       <div className="flex h-dvh w-full">
         <aside className="flex w-72 flex-col border-r bg-sidebar">
           <div className="border-b p-3">
@@ -403,15 +364,6 @@ export const Assistant = () => {
                 onClick={() => uploadInputRef.current?.click()}
               >
                 Upload document to KB
-              </Button>
-              <Button
-                variant={pendingCount > 0 ? "default" : "outline"}
-                className="w-full"
-                onClick={handleApplyPending}
-                disabled={applying || pendingCount === 0}
-                title="Ingest everything added via 'Add to KB' or document upload since the last apply"
-              >
-                {applying ? "Applying..." : `Apply pending${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
               </Button>
             </div>
           )}

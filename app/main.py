@@ -2,9 +2,9 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_users.password import PasswordHelper
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel
@@ -53,9 +53,12 @@ from app.config_store import ensure_prompt_seeded, get_system_prompt, update_sys
 from app.db import async_session_maker, create_db_and_tables
 from app.models import User
 from app.pending_kb import (
-    apply_pending_ingests,
-    count_pending,
+    apply_pending_in_background,
     create_pending,
+    delete_trainer_file,
+    get_trainer_file,
+    list_trainer_files,
+    trainer_dir,
     write_trainer_text,
     write_trainer_upload,
 )
@@ -260,7 +263,11 @@ async def summarise_kb(request: SummariseRequest, trainer: User = Depends(curren
 
 
 @app.post("/kb/trainer-file")
-async def save_trainer_file(request: TrainerFileRequest, trainer: User = Depends(current_trainer)):
+async def save_trainer_file(
+    request: TrainerFileRequest,
+    background_tasks: BackgroundTasks,
+    trainer: User = Depends(current_trainer),
+):
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Cannot save empty knowledge.")
@@ -271,12 +278,15 @@ async def save_trainer_file(request: TrainerFileRequest, trainer: User = Depends
         await create_pending(
             db, trainer.id, trainer_name, KB_KIND_MESSAGE, f"Trainer note by {trainer_name}", filename
         )
-    return {"filename": filename, "pending": True}
+    background_tasks.add_task(apply_pending_in_background)
+    return {"filename": filename}
 
 
 @app.post("/kb/document")
 async def add_document_to_kb(
-    file: UploadFile = File(...), trainer: User = Depends(current_trainer)
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    trainer: User = Depends(current_trainer),
 ):
     raw_bytes = await file.read()
     try:
@@ -289,20 +299,8 @@ async def add_document_to_kb(
         await create_pending(
             db, trainer.id, trainer_name, KB_KIND_DOCUMENT, file.filename, filename
         )
-    return {"filename": filename, "pending": True}
-
-
-@app.get("/kb/pending")
-async def get_pending(trainer: User = Depends(current_trainer)):
-    async with async_session_maker() as db:
-        return {"count": await count_pending(db)}
-
-
-@app.post("/kb/apply-pending")
-async def apply_pending(trainer: User = Depends(current_trainer)):
-    async with async_session_maker() as db:
-        applied = await apply_pending_ingests(db)
-    return {"applied": applied}
+    background_tasks.add_task(apply_pending_in_background)
+    return {"filename": filename}
 
 
 def user_payload(user: User) -> dict:
@@ -393,22 +391,65 @@ async def admin_delete_session(
 async def admin_list_kb(admin: User = Depends(current_admin)):
     async with async_session_maker() as db:
         entries = await list_kb_entries(db)
-        return [
-            {
-                "id": str(entry.id),
-                "kind": entry.kind,
-                "source_label": entry.source_label,
-                "filename": entry.filename,
-                "trainer_name": entry.trainer_name,
-                "created_at": entry.created_at,
-            }
-            for entry in entries
-        ]
+        files = await list_trainer_files(db)
+
+    combined = [
+        {
+            "id": str(entry.id),
+            "kind": entry.kind,
+            "source_label": entry.source_label,
+            "filename": entry.filename,
+            "trainer_name": entry.trainer_name,
+            "created_at": entry.created_at,
+            "downloadable": False,
+        }
+        for entry in entries
+    ]
+    combined.extend(
+        {
+            "id": str(item.id),
+            "kind": item.kind,
+            "source_label": item.source_label,
+            # Notes have only an internal filename; show the readable label instead.
+            "filename": item.source_label if item.kind == KB_KIND_DOCUMENT else "",
+            "trainer_name": item.trainer_name,
+            "created_at": item.created_at,
+            # Trainer files live on disk, so they can be downloaded as-is.
+            "downloadable": True,
+        }
+        for item in files
+    )
+    combined.sort(key=lambda row: row["created_at"], reverse=True)
+    return combined
+
+
+@app.get("/admin/kb/{entry_id}/download")
+async def admin_download_kb(entry_id: uuid.UUID, admin: User = Depends(current_admin)):
+    async with async_session_maker() as db:
+        trainer_file = await get_trainer_file(db, entry_id)
+    if trainer_file is None:
+        raise HTTPException(status_code=404, detail="No downloadable file for this entry.")
+
+    path = trainer_dir() / trainer_file.filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File is no longer available.")
+
+    # Documents keep their original name; notes download as a readable .txt.
+    if trainer_file.kind == KB_KIND_DOCUMENT:
+        download_name = trainer_file.source_label or trainer_file.filename
+    else:
+        download_name = "trainer-note.txt"
+    return FileResponse(path, filename=download_name)
 
 
 @app.delete("/admin/kb/{entry_id}")
 async def admin_delete_kb(entry_id: uuid.UUID, admin: User = Depends(current_admin)):
     async with async_session_maker() as db:
+        trainer_file = await get_trainer_file(db, entry_id)
+        if trainer_file is not None:
+            await delete_trainer_file(db, trainer_file)
+            return {"status": "deleted", "id": str(entry_id)}
+
         entry = await get_kb_entry(db, entry_id)
         if entry is None:
             raise HTTPException(status_code=404, detail="Knowledge base entry not found.")

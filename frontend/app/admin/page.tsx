@@ -18,6 +18,7 @@ import {
   adminUpdatePrompt,
   adminUserSessions,
   fetchCurrentUser,
+  kbDownloadUrl,
   type CurrentUser,
   type Gap,
   type KBEntry,
@@ -355,7 +356,19 @@ export default function AdminPage() {
             <tbody>
               {kbEntries.map((entry) => (
                 <tr key={entry.id} className="border-t">
-                  <td className="p-2">{entry.filename || entry.source_label}</td>
+                  <td className="p-2">
+                    {entry.downloadable ? (
+                      <a
+                        href={kbDownloadUrl(entry.id)}
+                        className="text-primary underline underline-offset-2 hover:opacity-80"
+                        download
+                      >
+                        {entry.filename || entry.source_label}
+                      </a>
+                    ) : (
+                      entry.filename || entry.source_label
+                    )}
+                  </td>
                   <td className="p-2">{entry.kind}</td>
                   <td className="p-2">{entry.trainer_name}</td>
                   <td className="p-2">

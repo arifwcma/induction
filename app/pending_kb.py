@@ -13,23 +13,27 @@ also means a future full re-ingest re-walks them, so applied trainer knowledge
 survives a destructive rebuild.
 """
 
+import json
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import func, select
+from qdrant_client import models as qmodels
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.config import get_settings
 from app.ingest_one import embed_and_index_file
+from app.kb.bm25_index import BM25_CORPUS_PATH
 from app.models import (
     PENDING_STATUS_APPLIED,
     PENDING_STATUS_PENDING,
     Clause,
     PendingIngest,
 )
+from app.rag.engine import get_vector_store
 from app.rag.kb_outline import reset_outline_cache
 from app.rag.retrieval import reset_bm25_cache
 
@@ -101,6 +105,55 @@ async def list_pending(db: AsyncSession, status: str = PENDING_STATUS_PENDING) -
     return list((await db.execute(query)).scalars().all())
 
 
+async def list_trainer_files(db: AsyncSession) -> list[PendingIngest]:
+    query = select(PendingIngest).order_by(PendingIngest.created_at.desc())
+    return list((await db.execute(query)).scalars().all())
+
+
+async def get_trainer_file(db: AsyncSession, entry_id: uuid.UUID) -> PendingIngest | None:
+    return await db.get(PendingIngest, entry_id)
+
+
+def _purge_file_stores(filename: str):
+    """Remove a trainer file's content from Qdrant + the BM25 corpus + disk.
+
+    Everything a single ingested file produced shares one ``source`` (the stored
+    filename), so we can delete by that key across both retrieval stores."""
+    settings = get_settings()
+    client = get_vector_store().client
+    if client.collection_exists(settings.qdrant_collection):
+        client.delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=qmodels.FilterSelector(
+                filter=qmodels.Filter(
+                    must=[qmodels.FieldCondition(key="source", match=qmodels.MatchValue(value=filename))]
+                )
+            ),
+        )
+
+    if BM25_CORPUS_PATH.exists():
+        records = json.loads(BM25_CORPUS_PATH.read_text(encoding="utf-8"))
+        kept = [r for r in records if r.get("metadata", {}).get("source") != filename]
+        if len(kept) != len(records):
+            BM25_CORPUS_PATH.write_text(json.dumps(kept), encoding="utf-8")
+
+    file_path = trainer_dir() / filename
+    if file_path.exists():
+        file_path.unlink()
+
+
+async def delete_trainer_file(db: AsyncSession, pending: PendingIngest):
+    """Fully remove a trainer-contributed file: its vectors, BM25 records,
+    clause rows, the file on disk, and the tracking row; then refresh caches."""
+    filename = pending.filename
+    await run_in_threadpool(_purge_file_stores, filename)
+    await db.execute(delete(Clause).where(Clause.source == filename))
+    await db.delete(pending)
+    await db.commit()
+    reset_bm25_cache()
+    reset_outline_cache()
+
+
 async def count_pending(db: AsyncSession) -> int:
     query = select(func.count()).select_from(PendingIngest).where(
         PendingIngest.status == PENDING_STATUS_PENDING
@@ -136,3 +189,16 @@ async def apply_pending_ingests(db: AsyncSession) -> int:
         reset_bm25_cache()
         reset_outline_cache()
     return applied
+
+
+async def apply_pending_in_background():
+    """Apply all pending ingests in a fresh DB session.
+
+    Scheduled as a fire-and-forget background task right after a trainer saves a
+    note or uploads a document, so ingestion happens silently (a few seconds
+    later) without a manual "apply" step. Any failure leaves the file marked
+    pending, so a later save/upload re-attempts it."""
+    from app.db import async_session_maker
+
+    async with async_session_maker() as db:
+        await apply_pending_ingests(db)

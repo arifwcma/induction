@@ -30,7 +30,7 @@ Each category folder may contain six file types, all ingested recursively:
 
 The category is stored on every `clause` row and shown in the KB MAP grouped by category with its objective.
 
-There is also a `trainer` category (`documents/trainer/`, a writable named volume on the server). Trainers add knowledge two ways from the app — the per-message "Add to KB" (a chat is summarised into a `.txt`) and "Upload document to KB". Both are STAGED (pending), not ingested instantly; clicking "Apply pending (N)" in the sidebar ingests them in-process and refreshes the caches. These files carry `origin=trainer` so they are cited as "learned from management", and because `trainer` is listed in `objectives.json` they also survive a full re-ingest.
+There is also a `trainer` category (`documents/trainer/`, a writable named volume on the server). Trainers add knowledge two ways from the app — the per-message "Add to KB" (the chat is summarised into a `.txt`) and "Upload document to KB". Both write the file under `documents/trainer/` and record a `PendingIngest` row, then a FastAPI background task ingests it in-process and refreshes the BM25 + KB-map caches automatically (silent; searchable a few seconds later — there is no manual "apply" step). These files carry `origin=trainer` so they are cited as "learned from management", and because `trainer` is listed in `objectives.json` they also survive a full re-ingest.
 
 ## Ports & gotchas
 
