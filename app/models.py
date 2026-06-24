@@ -91,6 +91,26 @@ class TrainerKBEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+PENDING_STATUS_PENDING = "pending"
+PENDING_STATUS_APPLIED = "applied"
+
+
+class PendingIngest(Base):
+    __tablename__ = "pending_ingest"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    trainer_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("user.id"), nullable=True, index=True
+    )
+    trainer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default=PENDING_STATUS_PENDING, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 GAP_STATUS_OPEN = "open"
 GAP_STATUS_REVIEWED = "reviewed"
 GAP_STATUS_DISMISSED = "dismissed"

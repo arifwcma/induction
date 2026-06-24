@@ -54,12 +54,20 @@ async def persist_clause_records(clause_records: list[dict]):
         await db.commit()
 
 
-def ingest_one(path: Path, category: str):
+def embed_and_index_file(path: Path, category: str, origin: str = "") -> list[dict]:
+    """Append one document to Qdrant + the BM25 corpus and return its clause records.
+
+    This does the embedding/indexing work (the parts safe to run inside a thread,
+    with no async DB access) and hands the clause records back to the caller to
+    persist. The CLI wrapper persists them via asyncio.run; the in-app "apply
+    pending" path persists them on the running event loop instead.
+    """
     configure_models()
 
     units = parse_document(path)
     for unit in units:
         unit.category = category
+        unit.origin = origin
 
     documents_for_embedding = []
     bm25_records = []
@@ -80,18 +88,25 @@ def ingest_one(path: Path, category: str):
             )
 
     if not documents_for_embedding:
-        print(f"No ingestible content found in {path.name}; nothing added.")
-        return
+        return []
 
     storage_context = StorageContext.from_defaults(vector_store=get_vector_store())
     VectorStoreIndex.from_documents(documents_for_embedding, storage_context=storage_context)
 
     append_bm25_records(bm25_records)
+    return clause_records
+
+
+def ingest_one(path: Path, category: str):
+    clause_records = embed_and_index_file(path, category)
+    if not clause_records:
+        print(f"No ingestible content found in {path.name}; nothing added.")
+        return
+
     asyncio.run(persist_clause_records(clause_records))
 
     print(
-        f"Appended {len(documents_for_embedding)} chunks, {len(clause_records)} clauses, "
-        f"{len(bm25_records)} BM25 records from '{path.name}' (category={category})."
+        f"Appended {len(clause_records)} clauses from '{path.name}' (category={category})."
     )
     print("Restart the backend so the cached BM25 index and KB map reload.")
 

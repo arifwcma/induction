@@ -31,7 +31,6 @@ from app.models import (
 )
 from app.trainer_kb import (
     add_text_to_knowledge_base,
-    extract_text_from_upload,
     remove_from_knowledge_base,
 )
 
@@ -53,7 +52,14 @@ from app.config import get_settings
 from app.config_store import ensure_prompt_seeded, get_system_prompt, update_system_prompt
 from app.db import async_session_maker, create_db_and_tables
 from app.models import User
-from app.rag.chat import DEFAULT_SYSTEM_PROMPT, summarise_conversation
+from app.pending_kb import (
+    apply_pending_ingests,
+    count_pending,
+    create_pending,
+    write_trainer_text,
+    write_trainer_upload,
+)
+from app.rag.chat import DEFAULT_SYSTEM_PROMPT, summarise_conversation, summarise_trainer_knowledge
 from app.rag.pipeline import stream_grounded_answer
 from app.schemas import UserCreate, UserRead, UserUpdate
 
@@ -231,39 +237,72 @@ async def add_message_to_kb(request: KBTextRequest, trainer: User = Depends(curr
     return {"id": str(entry.id), "source_label": source_label}
 
 
+class SummariseRequest(BaseModel):
+    session_id: str
+
+
+class TrainerFileRequest(BaseModel):
+    text: str
+
+
+@app.post("/kb/summarise")
+async def summarise_kb(request: SummariseRequest, trainer: User = Depends(current_trainer)):
+    async with async_session_maker() as db:
+        chat_session = await get_owned_session(db, trainer.id, request.session_id)
+        if chat_session is None:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        history = await load_history(db, chat_session.id)
+
+    summary = await run_in_threadpool(summarise_trainer_knowledge, history)
+    if not summary:
+        return {"empty": True}
+    return {"summary": summary}
+
+
+@app.post("/kb/trainer-file")
+async def save_trainer_file(request: TrainerFileRequest, trainer: User = Depends(current_trainer)):
+    text = request.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Cannot save empty knowledge.")
+
+    trainer_name = trainer_display_name(trainer)
+    filename = await run_in_threadpool(write_trainer_text, text)
+    async with async_session_maker() as db:
+        await create_pending(
+            db, trainer.id, trainer_name, KB_KIND_MESSAGE, f"Trainer note by {trainer_name}", filename
+        )
+    return {"filename": filename, "pending": True}
+
+
 @app.post("/kb/document")
 async def add_document_to_kb(
     file: UploadFile = File(...), trainer: User = Depends(current_trainer)
 ):
     raw_bytes = await file.read()
     try:
-        extracted_text = await run_in_threadpool(
-            extract_text_from_upload, file.filename, raw_bytes
-        )
+        filename = await run_in_threadpool(write_trainer_upload, file.filename, raw_bytes)
     except ValueError as unsupported_file:
         raise HTTPException(status_code=400, detail=str(unsupported_file))
 
-    if not extracted_text.strip():
-        raise HTTPException(status_code=400, detail="No readable text found in the uploaded file.")
-
     trainer_name = trainer_display_name(trainer)
-    source_label = file.filename
-
     async with async_session_maker() as db:
-        entry = await create_kb_entry(
-            db,
-            trainer.id,
-            trainer_name,
-            KB_KIND_DOCUMENT,
-            source_label,
-            extracted_text,
-            filename=file.filename,
+        await create_pending(
+            db, trainer.id, trainer_name, KB_KIND_DOCUMENT, file.filename, filename
         )
+    return {"filename": filename, "pending": True}
 
-    await run_in_threadpool(
-        add_text_to_knowledge_base, extracted_text, source_label, trainer_name, str(entry.id)
-    )
-    return {"id": str(entry.id), "filename": file.filename}
+
+@app.get("/kb/pending")
+async def get_pending(trainer: User = Depends(current_trainer)):
+    async with async_session_maker() as db:
+        return {"count": await count_pending(db)}
+
+
+@app.post("/kb/apply-pending")
+async def apply_pending(trainer: User = Depends(current_trainer)):
+    async with async_session_maker() as db:
+        applied = await apply_pending_ingests(db)
+    return {"applied": applied}
 
 
 def user_payload(user: User) -> dict:
@@ -338,6 +377,16 @@ async def admin_session_messages(
         if chat_session is None:
             raise HTTPException(status_code=404, detail="Session not found.")
         return await session_message_payload(db, chat_session.id)
+
+
+@app.delete("/admin/users/{user_id}/sessions/{session_id}", status_code=204)
+async def admin_delete_session(
+    user_id: uuid.UUID, session_id: str, admin: User = Depends(current_admin)
+):
+    async with async_session_maker() as db:
+        deleted = await delete_owned_session(db, user_id, session_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Session not found.")
 
 
 @app.get("/admin/kb")

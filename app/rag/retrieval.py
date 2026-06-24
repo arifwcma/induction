@@ -48,6 +48,15 @@ def get_bm25():
     return _bm25_store
 
 
+def reset_bm25_cache():
+    """Drop the cached BM25 store so the next search reloads it from disk.
+
+    Called after appending freshly-applied trainer knowledge to the corpus so
+    the new content is searchable without a process restart."""
+    global _bm25_store
+    _bm25_store = None
+
+
 def dense_candidates(question: str) -> list[Passage]:
     nodes = get_index().as_retriever(similarity_top_k=DENSE_CANDIDATES).retrieve(question)
     passages = []

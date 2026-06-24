@@ -119,6 +119,7 @@ def chunks_for_unit(unit: ClauseUnit, situating: SituatingResult) -> list[Contex
     breadcrumb = effective_breadcrumb(unit, situating)
     title = effective_title(unit, situating)
     header = context_header(unit, situating)
+    origin = unit.origin or ("trainer" if unit.category == "trainer" else "")
     chunks = []
     for piece in split_body(unit.body()):
         chunks.append(
@@ -128,6 +129,7 @@ def chunks_for_unit(unit: ClauseUnit, situating: SituatingResult) -> list[Contex
                 metadata={
                     "source": unit.source,
                     "category": unit.category,
+                    "origin": origin,
                     "clause_number": unit.clause_number,
                     "title": title,
                     "breadcrumb": breadcrumb,

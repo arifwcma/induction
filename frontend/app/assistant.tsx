@@ -14,11 +14,15 @@ import { Button } from "@/components/ui/button";
 import { TrainerProvider } from "@/lib/trainer-context";
 import {
   API_URL,
+  applyPendingKB,
   deleteSession,
   fetchCurrentUser,
+  getPendingCount,
   getSessionMessages,
   listSessions,
   logout,
+  saveTrainerFile,
+  summariseKBFromSession,
   uploadDocumentToKB,
   type CurrentUser,
   type SessionSummary,
@@ -182,6 +186,13 @@ export const Assistant = () => {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
   const [initialMessages, setInitialMessages] = useState<ThreadMessageLike[]>(WELCOME_THREAD);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [applying, setApplying] = useState(false);
+  const [kbOpen, setKbOpen] = useState(false);
+  const [kbLoading, setKbLoading] = useState(false);
+  const [kbDraft, setKbDraft] = useState("");
+  const [kbNoKnowledge, setKbNoKnowledge] = useState(false);
+  const [kbSaving, setKbSaving] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -189,6 +200,14 @@ export const Assistant = () => {
       setSessions(await listSessions());
     } catch {
       setSessions([]);
+    }
+  }, []);
+
+  const refreshPending = useCallback(async () => {
+    try {
+      setPendingCount(await getPendingCount());
+    } catch {
+      setPendingCount(0);
     }
   }, []);
 
@@ -201,8 +220,11 @@ export const Assistant = () => {
       }
       setUser(currentUser);
       await refreshSessions();
+      if (currentUser.role === "trainer" || currentUser.role === "admin") {
+        await refreshPending();
+      }
     })();
-  }, [router, refreshSessions]);
+  }, [router, refreshSessions, refreshPending]);
 
   async function openSession(selectedId: string) {
     const stored = await getSessionMessages(selectedId);
@@ -243,13 +265,73 @@ export const Assistant = () => {
     }
     try {
       await uploadDocumentToKB(file);
-      alert(`Added "${file.name}" to the knowledge base.`);
+      await refreshPending();
+      alert(`"${file.name}" is queued. Click "Apply pending" to add it to the knowledge base.`);
     } catch (uploadError) {
       alert(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
       if (uploadInputRef.current) {
         uploadInputRef.current.value = "";
       }
+    }
+  }
+
+  async function handleApplyPending() {
+    setApplying(true);
+    try {
+      const applied = await applyPendingKB();
+      await refreshPending();
+      alert(
+        applied > 0
+          ? `Applied ${applied} item${applied === 1 ? "" : "s"} to the knowledge base.`
+          : "There was nothing pending to apply.",
+      );
+    } catch (applyError) {
+      alert(applyError instanceof Error ? applyError.message : "Could not apply pending knowledge.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  const openAddToKb = useCallback(async () => {
+    setKbOpen(true);
+    setKbLoading(true);
+    setKbNoKnowledge(false);
+    setKbDraft("");
+    try {
+      const result = await summariseKBFromSession(sessionId);
+      if (result.empty || !result.summary) {
+        setKbNoKnowledge(true);
+      } else {
+        setKbDraft(result.summary);
+      }
+    } catch {
+      setKbOpen(false);
+      alert("Could not read this conversation to extract knowledge.");
+    } finally {
+      setKbLoading(false);
+    }
+  }, [sessionId]);
+
+  function closeKb() {
+    setKbOpen(false);
+    setKbDraft("");
+    setKbNoKnowledge(false);
+  }
+
+  async function handleSaveKb() {
+    if (!kbDraft.trim()) {
+      return;
+    }
+    setKbSaving(true);
+    try {
+      await saveTrainerFile(kbDraft);
+      await refreshPending();
+      closeKb();
+    } catch {
+      alert("Could not save this knowledge.");
+    } finally {
+      setKbSaving(false);
     }
   }
 
@@ -263,7 +345,12 @@ export const Assistant = () => {
   const canTrain = user.role === "trainer" || user.role === "admin";
 
   return (
-    <TrainerProvider canTrain={canTrain}>
+    <TrainerProvider
+      canTrain={canTrain}
+      sessionId={sessionId}
+      refreshPending={refreshPending}
+      openAddToKb={openAddToKb}
+    >
       <div className="flex h-dvh w-full">
         <aside className="flex w-72 flex-col border-r bg-sidebar">
           <div className="border-b p-3">
@@ -302,7 +389,7 @@ export const Assistant = () => {
             ))}
           </nav>
           {canTrain && (
-            <div className="border-t p-3">
+            <div className="flex flex-col gap-2 border-t p-3">
               <input
                 ref={uploadInputRef}
                 type="file"
@@ -316,6 +403,15 @@ export const Assistant = () => {
                 onClick={() => uploadInputRef.current?.click()}
               >
                 Upload document to KB
+              </Button>
+              <Button
+                variant={pendingCount > 0 ? "default" : "outline"}
+                className="w-full"
+                onClick={handleApplyPending}
+                disabled={applying || pendingCount === 0}
+                title="Ingest everything added via 'Add to KB' or document upload since the last apply"
+              >
+                {applying ? "Applying..." : `Apply pending${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
               </Button>
             </div>
           )}
@@ -348,6 +444,54 @@ export const Assistant = () => {
           />
         </div>
       </div>
+
+      {kbOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={closeKb}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg border bg-background p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {kbLoading ? (
+              <p className="text-base text-muted-foreground">Reading the conversation…</p>
+            ) : kbNoKnowledge ? (
+              <>
+                <h2 className="mb-2 text-lg font-semibold">Nothing to add</h2>
+                <p className="mb-5 text-base text-foreground">
+                  I could not detect any knowledge from this conversation.
+                </p>
+                <div className="flex justify-end">
+                  <Button onClick={closeKb}>Close</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="mb-1 text-lg font-semibold">Add to knowledge base</h2>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Review and edit the knowledge below. It becomes part of the knowledge base when
+                  you click &ldquo;Apply pending&rdquo; in the sidebar.
+                </p>
+                <textarea
+                  value={kbDraft}
+                  onChange={(event) => setKbDraft(event.target.value)}
+                  rows={8}
+                  className="mb-4 w-full resize-y rounded-md border bg-background p-2 text-sm"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={closeKb} disabled={kbSaving}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSaveKb} disabled={kbSaving || !kbDraft.trim()}>
+                    {kbSaving ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </TrainerProvider>
   );
 };

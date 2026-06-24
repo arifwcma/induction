@@ -131,8 +131,17 @@ Ingestion (`app/kb/ingest_kb.py`): `list_categorised_documents()` walks the `obj
 ## 10. Roadmap / next tasks
 M2 (planned): auto-refresh ingestion on document upload (change-detection), and robust retrieval for a larger KB (hierarchical/structured retrieval beyond rerank).
 
-### ⭐ NEXT TASK — Trainer "Add to KB" from a conversation + pending-ingest "Apply" button
-Build this next. It lets a trainer teach the bot from a live chat, review a polished summary, save it as a knowledge file, and apply all pending additions on demand. Do NOT special-case any example; build the general mechanism. `app/ingest_one.py` is the ingest building block.
+### ✅ DONE (Phase 7) — Trainer "Add to KB" + deferred upload + apply-pending
+BUILT. Both trainer contributions are now DEFERRED to a pending queue and ingested on demand:
+- **"Add to KB"** (on the trainer's own message, `frontend/components/thread.tsx`) → `POST /kb/summarise` (fast-lane `summarise_trainer_knowledge`) distils any taught knowledge from the session → editable popup (Save/Cancel) → Save → `POST /kb/trainer-file` writes `documents/trainer/{slug}-{id}.txt` + a `PendingIngest` row. No taught knowledge → "I could not detect any knowledge from this." (nothing saved).
+- **"Upload document to KB"** → `POST /kb/document` now just stages the file under `documents/trainer/` + a pending row (NO instant embed; the old instant `add_text_to_knowledge_base` embed path is bypassed for uploads).
+- **"Apply pending (N)"** (left panel, `frontend/app/assistant.tsx`) → `POST /kb/apply-pending` → `app/pending_kb.apply_pending_ingests`: for each pending file run `embed_and_index_file` (the refactored `ingest_one` core: Qdrant + BM25 + clause table) IN A THREAD, persist clause rows on the request loop, mark applied (idempotent), then `reset_bm25_cache()` + `reset_outline_cache()`. No container restart needed.
+- **Attribution** stays "learned from management": trainer chunks carry `origin="trainer"` (derived in `contextual.py` from the new `trainer` category) → `passage_label`. **Survival across full re-ingest:** `trainer` is added to `objectives.json` so a destructive rebuild re-walks `documents/trainer`; on the server that dir is the new `induction_trainer_docs` named volume (in `deploy/compose.server.yaml`), writable under the read-only container.
+- New model `PendingIngest` (auto-creates on startup, no migration). New module `app/pending_kb.py`. Endpoints: `/kb/summarise`, `/kb/trainer-file`, `/kb/pending`, `/kb/apply-pending` (+ repurposed `/kb/document`). Verified locally: eval 11/11, smoke Cases 1–12 clean. **Deploy = `update.sh`, but FIRST add the `induction_trainer_docs` volume + mount to the server compose (a fresh deploy from `deploy/compose.server.yaml` already has it).**
+- **Known limits / follow-ups:** applied trainer files are tracked in `PendingIngest`, not `TrainerKBEntry`, so they do NOT appear in the admin `/admin/kb` list and there is no admin "remove" for applied trainer content (the old instant `/kb/text` path + its delete still exist, unused by the new UI). `ingest_one`/`embed_and_index_file` set no shared Qdrant ref id, so deleting applied trainer chunks would need a re-ingest. Big uploads run the situating LLM per unit at apply time (slow but light on memory; no 512M OOM like a full ingest).
+
+### (original spec, for reference) Trainer "Add to KB" from a conversation + pending-ingest "Apply" button
+It lets a trainer teach the bot from a live chat, review a polished summary, save it as a knowledge file, and apply all pending additions on demand. Do NOT special-case any example; build the general mechanism. `app/ingest_one.py` is the ingest building block.
 
 **Desired UX (Arif's words, paraphrased):**
 1. Below a trainer's (user-role) message there is an **"Add to KB"** button (trainer/admin only — gate on `canTrain`).

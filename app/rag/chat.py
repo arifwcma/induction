@@ -401,6 +401,44 @@ def stream_in_pieces(text: str):
         yield word + " "
 
 
+TRAINER_KNOWLEDGE_INSTRUCTION = (
+    "A trainer (a knowledgeable staff member) has been chatting with an induction assistant and may "
+    "have TAUGHT it a fact, rule, correction, or piece of guidance to remember for new employees. "
+    "The teaching is in what the EMPLOYEE says - often as a correction or addition such as "
+    "'actually...', 'for your information...', 'note that...', or 'remember that...', frequently "
+    "right after the assistant said something was not in the documents.\n\n"
+    "Extract the knowledge the EMPLOYEE asserts as true and write it as a clear, self-contained "
+    "statement (a short paragraph) suitable as induction material.\n"
+    "- Treat the EMPLOYEE's assertion as the authority for what to remember. The assistant may have "
+    "hedged - called it 'unofficial', said it 'cannot be confirmed from the documents', or said it "
+    "should be checked with management. That hedging is EXPECTED, because the trainer is teaching "
+    "something the documents do not yet cover. IGNORE the hedging; it does NOT mean there is no "
+    "knowledge to capture.\n"
+    "- Use the employee's own factual content. Do not copy the assistant's disclaimers, do not add "
+    "the back-and-forth, and do not invent details the employee did not state.\n\n"
+    "If the EMPLOYEE did not assert any fact or guidance at all (for example they only asked "
+    "questions, greeted, or made small talk), reply with exactly: NO_KNOWLEDGE\n\n"
+    "Conversation so far:\n{transcript}\n\nTaught knowledge:"
+)
+
+NO_KNOWLEDGE_SENTINEL = "NO_KNOWLEDGE"
+
+
+def summarise_trainer_knowledge(history: list[ChatMessage]) -> str | None:
+    """Distil any knowledge a trainer taught during a chat into a storable note.
+
+    Returns the polished statement, or None when the conversation contains no
+    taught knowledge (so the caller can tell the trainer nothing was detected)."""
+    if not history:
+        return None
+    llm = build_fast_llm()
+    prompt = TRAINER_KNOWLEDGE_INSTRUCTION.format(transcript=format_transcript(history))
+    output = llm.complete(prompt).text.strip()
+    if not output or output.upper().startswith(NO_KNOWLEDGE_SENTINEL):
+        return None
+    return output
+
+
 def summarise_conversation(history: list[ChatMessage]) -> str:
     if not history:
         return ""

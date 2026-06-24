@@ -10,3 +10,8 @@ storage/
 qdrant_storage/
 kb_index/
 .DS_Store
+
+# Trainer-contributed knowledge is written at runtime to a writable volume on the
+# server; the files themselves are not source. Keep the folder, ignore contents.
+documents/trainer/*
+!documents/trainer/.gitkeep

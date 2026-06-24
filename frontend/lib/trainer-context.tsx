@@ -2,18 +2,44 @@
 
 import { createContext, useContext } from "react";
 
-const TrainerContext = createContext<boolean>(false);
+type TrainerContextValue = {
+  canTrain: boolean;
+  sessionId: string;
+  refreshPending: () => void;
+  openAddToKb: () => void;
+};
+
+const TrainerContext = createContext<TrainerContextValue>({
+  canTrain: false,
+  sessionId: "",
+  refreshPending: () => {},
+  openAddToKb: () => {},
+});
 
 export function TrainerProvider({
   canTrain,
+  sessionId,
+  refreshPending,
+  openAddToKb,
   children,
 }: {
   canTrain: boolean;
+  sessionId: string;
+  refreshPending: () => void;
+  openAddToKb: () => void;
   children: React.ReactNode;
 }) {
-  return <TrainerContext.Provider value={canTrain}>{children}</TrainerContext.Provider>;
+  return (
+    <TrainerContext.Provider value={{ canTrain, sessionId, refreshPending, openAddToKb }}>
+      {children}
+    </TrainerContext.Provider>
+  );
+}
+
+export function useTrainer(): TrainerContextValue {
+  return useContext(TrainerContext);
 }
 
 export function useCanTrain(): boolean {
-  return useContext(TrainerContext);
+  return useContext(TrainerContext).canTrain;
 }

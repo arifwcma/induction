@@ -15,6 +15,7 @@ services:
       - /tmp
     volumes:
       - induction_kb_index:/app/kb_index
+      - induction_trainer_docs:/app/documents/trainer
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -90,6 +91,7 @@ volumes:
   induction_qdrant_storage:
   induction_postgres_storage:
   induction_kb_index:
+  induction_trainer_docs:
 
 networks:
   internal-apps:

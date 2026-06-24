@@ -34,6 +34,7 @@ class ClauseUnit:
     text_lines: list[str] = field(default_factory=list)
     source: str = ""
     category: str = ""
+    origin: str = ""
 
     def breadcrumb(self) -> str:
         trail = self.parent_path + [self.heading_label()]

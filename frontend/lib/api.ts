@@ -128,6 +128,34 @@ export async function uploadDocumentToKB(file: File): Promise<void> {
   await request("/kb/document", { method: "POST", body: form });
 }
 
+export async function summariseKBFromSession(
+  sessionId: string,
+): Promise<{ summary?: string; empty?: boolean }> {
+  return request("/kb/summarise", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+export async function saveTrainerFile(text: string): Promise<void> {
+  await request("/kb/trainer-file", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function getPendingCount(): Promise<number> {
+  const result = await request("/kb/pending");
+  return result.count as number;
+}
+
+export async function applyPendingKB(): Promise<number> {
+  const result = await request("/kb/apply-pending", { method: "POST" });
+  return result.applied as number;
+}
+
 export async function adminListUsers(): Promise<CurrentUser[]> {
   return request("/admin/users");
 }
@@ -161,6 +189,12 @@ export async function adminSessionMessages(
   sessionId: string,
 ): Promise<StoredMessage[]> {
   return request(`/admin/users/${userId}/sessions/${encodeURIComponent(sessionId)}/messages`);
+}
+
+export async function adminDeleteSession(userId: string, sessionId: string): Promise<void> {
+  await request(`/admin/users/${userId}/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function adminGetPrompt(): Promise<{ prompt: string }> {

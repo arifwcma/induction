@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   adminDeleteKB,
+  adminDeleteSession,
   adminDeleteUser,
   adminGetPrompt,
   adminListGaps,
@@ -142,6 +143,20 @@ export default function AdminPage() {
     setConversation(await adminSessionMessages(userId, sessionId));
   }
 
+  async function deleteConversation(sessionId: string, title: string) {
+    if (!window.confirm(`Delete the conversation "${title}"? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await adminDeleteSession(viewedUserId, sessionId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not delete this conversation.");
+      return;
+    }
+    setConversation([]);
+    setUserSessions(await adminUserSessions(viewedUserId));
+  }
+
   if (authorized === undefined) {
     return <div className="p-8 text-muted-foreground">Loading...</div>;
   }
@@ -275,18 +290,35 @@ export default function AdminPage() {
       {viewedUserId && (
         <section className="space-y-3">
           <h2 className="text-lg font-medium">Conversations</h2>
-          <div className="flex flex-wrap gap-2">
-            {userSessions.map((session) => (
-              <Button
-                key={session.session_id}
-                variant="outline"
-                size="sm"
-                onClick={() => viewConversation(viewedUserId, session.session_id)}
-              >
-                {session.title}
-              </Button>
-            ))}
-          </div>
+          {userSessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">This user has no saved conversations.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {userSessions.map((session) => (
+                <div
+                  key={session.session_id}
+                  className="flex items-center overflow-hidden rounded-md border"
+                >
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 text-sm hover:bg-muted"
+                    onClick={() => viewConversation(viewedUserId, session.session_id)}
+                  >
+                    {session.title}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Delete conversation"
+                    title="Delete conversation"
+                    className="border-l px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-destructive"
+                    onClick={() => deleteConversation(session.session_id, session.title)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="space-y-2 rounded-lg border p-3">
             {conversation.map((message, index) => (
               <div key={index} className="text-sm">
