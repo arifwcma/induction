@@ -258,11 +258,21 @@ async def stream_grounded_answer(
         condense_to_standalone_question, fast_llm, history, message
     )
     gap_verdict = await run_in_threadpool(classify_gap, fast_llm, standalone_question, kb_map)
-    if gap_verdict.is_gap:
-        if db is not None and user_id is not None and session_key:
+    # The gap verdict is judged only against the KB MAP, which lists documents and
+    # section titles but NOT their granular content (e.g. the staff names inside
+    # the org chart). So an out_of_scope verdict can be a false negative for a
+    # fact that genuinely lives in the documents. Rather than refuse immediately,
+    # treat it as a HINT: retrieve anyway and only fall back to the gap message if
+    # retrieval finds nothing to ground an answer (or the draft cannot be
+    # verified). When the gate was right, retrieval yields no applicable passages
+    # and the behaviour is identical to before; when it was wrong, the grounded
+    # answer goes through the same verifier as every other answer.
+    suspected_gap = gap_verdict.is_gap
+    abstain_response = GAP_RESPONSE if suspected_gap else UNSURE_RESPONSE
+
+    async def log_suspected_gap():
+        if suspected_gap and db is not None and user_id is not None and session_key:
             await log_gap(db, user_id, session_key, standalone_question, gap_verdict.topic)
-        yield {"t": "final", "v": GAP_RESPONSE}
-        return
 
     async def _search():
         sub_questions = await run_in_threadpool(
@@ -275,6 +285,14 @@ async def stream_grounded_answer(
     async for beat in _heartbeats_until(search_task, "Searching the policy library…"):
         yield beat
     sub_questions, passages, clauses = search_task.result()
+
+    # Suspected gap AND retrieval found nothing applicable -> a genuine gap. This
+    # reproduces the original behaviour exactly (gap message + logged gap).
+    if suspected_gap and not passages:
+        await log_suspected_gap()
+        yield {"t": "final", "v": GAP_RESPONSE}
+        return
+
     context_block = _build_context_block(passages, clauses, cross_session_context)
 
     yield {"t": "status", "v": "Drafting your answer…"}
@@ -329,7 +347,11 @@ async def stream_grounded_answer(
             if event["t"] == "final":
                 return
 
-    yield {"t": "final", "v": UNSURE_RESPONSE}
+    # No verifiable answer. For a suspected gap this means retrieval surfaced some
+    # passages but none could ground an answer, so fall back to the gap message
+    # (and log it) - exactly the outcome the original gate would have produced.
+    await log_suspected_gap()
+    yield {"t": "final", "v": abstain_response}
 
 
 async def produce_grounded_answer(
