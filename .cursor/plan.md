@@ -135,7 +135,7 @@ Phase 7 (trainer "Add to KB" + deferred document upload + apply-pending; NO re-i
 - Auth: `POST /auth/register`, `POST /auth/jwt/login`, `POST /auth/jwt/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`; `GET /users/me`.
 - Chat (login required): `POST /chat` (stream); `GET /sessions`; `GET /sessions/{id}/messages`.
 - Trainer: `POST /kb/text`, `POST /kb/document`.
-- Admin: `GET /admin/prompt`, `PUT /admin/prompt`, `GET /admin/users`, `POST /admin/users/{id}/role`, `POST /admin/users/{id}/reset-password`, `DELETE /admin/users/{id}` (cascade), `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sessions/{sid}/messages`, `DELETE /admin/users/{id}/sessions/{sid}`, `GET /admin/kb`, `GET /admin/kb/{id}/download`, `DELETE /admin/kb/{id}`, `GET /admin/gaps`, `POST /admin/gaps/{id}/status`.
+- Admin: `GET /admin/prompt`, `PUT /admin/prompt`, `GET /admin/users`, `POST /admin/users/{id}/role`, `POST /admin/users/{id}/reset-password`, `DELETE /admin/users/{id}` (cascade), `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sessions/{sid}/messages`, `DELETE /admin/users/{id}/sessions/{sid}`, `GET /admin/kb`, `GET /admin/kb/{id}/download`, `DELETE /admin/kb/{id}`, `GET /admin/gaps`, `POST /admin/gaps/{id}/status`, `DELETE /admin/gaps/{id}` (removes the gap only, not the conversation).
 - All browser calls must send `credentials: "include"` (httpOnly cookie auth).
 
 ### Decisions made when Arif skipped the auth questions (defaults applied)

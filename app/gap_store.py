@@ -42,5 +42,12 @@ async def set_gap_status(db: AsyncSession, gap: KnowledgeGap, status: str):
     await db.commit()
 
 
+async def delete_gap(db: AsyncSession, gap: KnowledgeGap):
+    """Remove a single knowledge-gap row. The conversation it came from is
+    untouched (gaps only reference a session via user_id + session_key)."""
+    await db.delete(gap)
+    await db.commit()
+
+
 async def delete_user_gaps(db: AsyncSession, user_id: uuid.UUID):
     await db.execute(delete(KnowledgeGap).where(KnowledgeGap.user_id == user_id))

@@ -224,3 +224,7 @@ export async function adminSetGapStatus(gapId: string, status: string): Promise<
     body: JSON.stringify({ status }),
   });
 }
+
+export async function adminDeleteGap(gapId: string): Promise<void> {
+  await request(`/admin/gaps/${gapId}`, { method: "DELETE" });
+}

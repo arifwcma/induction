@@ -8,6 +8,7 @@ import {
   adminDeleteSession,
   adminDeleteUser,
   adminGetPrompt,
+  adminDeleteGap,
   adminListGaps,
   adminListKB,
   adminListUsers,
@@ -107,6 +108,14 @@ export default function AdminPage() {
 
   async function updateGapStatus(gapId: string, status: string) {
     await adminSetGapStatus(gapId, status);
+    await loadGaps();
+  }
+
+  async function deleteGap(gapId: string) {
+    if (!confirm("Delete this knowledge gap? The conversation it came from is not affected.")) {
+      return;
+    }
+    await adminDeleteGap(gapId);
     await loadGaps();
   }
 
@@ -272,13 +281,22 @@ export default function AdminPage() {
                       </select>
                     </td>
                     <td className="p-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => viewGapConversation(gap)}
-                      >
-                        View chat
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => viewGapConversation(gap)}
+                        >
+                          View chat
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deleteGap(gap.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -19,7 +19,7 @@ from app.admin_store import (
     set_user_role,
 )
 from app.auth import auth_backend, current_active_user, current_admin, current_trainer, fastapi_users
-from app.gap_store import get_gap, list_gaps, set_gap_status
+from app.gap_store import delete_gap, get_gap, list_gaps, set_gap_status
 from app.kb_store import create_kb_entry, delete_kb_entry, get_kb_entry, list_kb_entries
 from app.models import (
     GAP_STATUSES,
@@ -493,6 +493,15 @@ async def admin_set_gap_status(
             raise HTTPException(status_code=404, detail="Gap not found.")
         await set_gap_status(db, gap, update.status)
         return {"id": str(gap_id), "status": update.status}
+
+
+@app.delete("/admin/gaps/{gap_id}", status_code=204)
+async def admin_delete_gap(gap_id: uuid.UUID, admin: User = Depends(current_admin)):
+    async with async_session_maker() as db:
+        gap = await get_gap(db, gap_id)
+        if gap is None:
+            raise HTTPException(status_code=404, detail="Gap not found.")
+        await delete_gap(db, gap)
 
 
 @app.delete("/admin/users/{user_id}", status_code=204)
