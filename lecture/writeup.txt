@@ -1,0 +1,11 @@
+Guest Lecture (ICT108): "Talk to Your Documents" — Building a Real-World AI Assistant
+
+This one-hour session walks through how a real AI product is designed and built, using a document question-answering chatbot as the running example. It is a case study of an actual system rather than a coding tutorial, focused on the concepts and the engineering decisions behind them.
+
+The session begins with a familiar idea: dropping a PDF into a tool like ChatGPT and asking questions. It then examines why this does not scale to thousands of documents or to users without a paid subscription, and builds a document chatbot step by step. At each step the naive system fails in an instructive way, and the failure motivates the concept that resolves it.
+
+Across the journey students encounter the core ideas behind modern AI systems: embeddings (representing meaning as numbers), retrieval and RAG (locating the right passage), hallucination (why models answer confidently but incorrectly), and reliability (making a system trustworthy). Each concept is grounded in a real problem observed while building the system.
+
+When: Tuesday 14 July 2026, 2 to 3 PM
+Format: In person and live-streamed for remote attendees
+Speaker: Dr Mohammad Arifur Rahman, Analyst Programmer, Wimmera CMA, Victoria
