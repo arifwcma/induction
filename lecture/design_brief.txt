@@ -1,0 +1,26 @@
+GUEST LECTURE POSTER — INFORMATION
+
+Title: Talk to Your Documents: Building a Real-World AI Assistant
+Speaker: Dr Mohammad Arifur Rahman, Analyst Programmer, Wimmera CMA, Victoria
+Course: ICT108
+Date: Tuesday 14 July 2026
+Time: 2:00 pm – 3:00 pm
+Format: In person and live-streamed (online)
+
+About the session:
+A case study of a real AI product, a document question-answering chatbot,
+built step by step, with each concept introduced through a real problem
+encountered while building it. Covers embeddings, retrieval (RAG),
+hallucination, and reliability.
+
+Who should attend:
+- Requested: ICT108 students
+- Welcomed: all IT students and staff
+- Open to industry stakeholders via live stream
+
+Why attend:
+- See how a real-world AI system is designed and built
+- Understand core ideas: embeddings, retrieval (RAG), hallucination, reliability
+- Follow the journey from a naive bot to a trustworthy assistant
+
+
