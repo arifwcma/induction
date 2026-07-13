@@ -19,19 +19,27 @@ other `.cursor` docs.
   transcript. `lecture_project.md` and `lesson.md` are now STALE for sequencing (still
   useful for their content — Part A ingestion mental model — but do not treat their TODO
   checklist as the live plan). This file supersedes them for "what's next."
-- **The deck is BUILT and is the live plan now.** `lecture/deck.pptx` (9 slides) +
+- **The deck is BUILT and is the live plan now.** `lecture/deck.pptx` (13 slides,
+  REBUILT from scratch on the night of Mon 13 July — see §4 for the new structure) +
   `lecture/transcript.md` (the same speaker-note text as a standalone doc, easier for Arif
-  to review without opening PowerPoint) + `lecture/build_deck.py` (the generator script —
+  to review without opening PowerPoint, now with per-slide minute marks summing to 45) +
+  `lecture/build_deck.py` (the generator script —
   edit this, don't hand-edit the pptx, EXCEPT Arif does sometimes hand-edit the pptx directly
   for small wording tweaks; see §4 workflow note, this WILL cause drift you must reconcile).
-- **Where we left off:** deck structure + wording for all 9 slides agreed and built (see §2
-  for the exact slide list). Arif had just made minor hand-edits to `deck.pptx` (title
-  subtitle trimmed, a bullet added to slide 3) before asking for two fixes (ChatGPT framing
-  on slide 3, add an architecture overview slide) — both DONE, deck rebuilt, `transcript.md`
-  renumbered to match. No open TODO was stated when he signed off; likely next asks:
-  read through the rest of the slide wording slide-by-slide, decide if more slides need the
-  same "make it concrete" treatment as slide 3, then move to REHEARSAL (his real bottleneck,
-  see §5).
+- **Full restructure on Mon 13 July (evening):** Arif changed the format to 45 min talk +
+  15 min Q&A and proposed a new narrative: phases instead of steps. Phase 1 = bare-minimum
+  word-match bot → breaks (Bug1 stand-in) → Phase 2 = meaning search + scope labels →
+  Phase 3 = verifier added → breaks (Bug2 stand-in) → fix + honest abstention. Agreed
+  trims for a weaker cohort: max three big ideas, old "step 5" folded into two sentences at
+  the end of phase 3, deep machinery (reranking, hybrid retrieval, query rewriting, etc.)
+  moved to a single "What we skipped — look these up later" slide. New elements: terminology
+  disclaimer on slide 1, three-API-provider framing (OpenAI/Anthropic/Cohere) on the
+  birdseye slide, mini-map with magnifying-glass lens on every phase slide, full
+  architecture slide colour-coded by phase, closing slide = domain-specific inspiration
+  (GIS/weather/finance bots), teaser on slide 3 that the closing slide calls back.
+- **Where we left off:** 13-slide deck + transcript rebuilt and previewed, not yet
+  reviewed by Arif slide-by-slide. Likely next asks: wording review, then REHEARSAL
+  (his real bottleneck, see §5).
 - **Deadline:** lecture is Tue 14 July 2026, 2:00–3:00 pm. Recompute remaining runway from
   today's date.
 
@@ -75,31 +83,47 @@ runs on an invented but structurally identical stand-in:
 5. Avoid phrasing that reads as less-academic (he rejected "no heavy coding").
 
 ## 4. The deck — structure, wording decisions, and the build workflow
-**Slide list (9 slides, in order, exact current titles):**
-1. Title — "Talk to Your Documents" + MetMate framing + Wimmera logo top-right.
-2. "Why not just use an existing chatbot?" — the Chrome-vs-chatbot analogy, 4 reasons
-   (diversified expectations / young field / no-code tools limited / field moves fast).
-   This slide did NOT exist in the original 5-step plan — Arif asked for it specifically to
-   kill an anticipated student objection early ("just use an off-the-shelf bot").
-3. Step 1 — "Upload it to ChatGPT" (renamed from "Upload a PDF"; Arif's fix this session:
-   make explicit that the naive move is literally uploading into an existing product like
-   ChatGPT, and that scaling it to every student means Sydney Met would have to build its
-   own ChatGPT-like product OR buy a subscription seat per student — neither scales).
-4. **"Here's the whole system, at a glance"** — NEW this session, an architecture-overview
-   slide inserted between step 1 and step 2 because Arif said the step-1-to-step-2 jump
-   didn't flow. Two-lane diagram: top lane "built once, before any question" (Documents →
-   Index by meaning), bottom lane "every question, live" (Student question → Search the
-   index → Draft answer → Check the answer → Final answer), with small amber "zoom: Step N"
-   tags showing which later slide expands which box. Steps 2–5 are now framed as "zooming
-   into one box" of this picture, not a flat sequence — reuse this framing if you add more
-   slides later.
-5. Step 2 — embeddings, the queen − female + male ≈ king diagram.
-6. Step 3 — RAG + the library-hours wrong-rule failure (Bug1 stand-in).
-7. Step 4 — "know what it knows" + the special-consideration false-refusal failure
-   (Bug2 stand-in).
-8. Step 5 — grounding/verification/calibrated abstention ("never make it up").
-9. Closing recap (5-step timeline recap, NOT the 9-slide count — the architecture slide and
-   the "why chatbot" slide are framing, not one of the "5 steps") + "Thank you — questions?"
+**Slide list (13 slides, in order, exact current titles — rebuilt Mon 13 July evening):**
+1. Title — "Talk to Your Documents" + MetMate framing + terminology-disclaimer card
+   ("concepts over terminology... look them up later") + Wimmera logo top-right.
+2. "Why not just upload it to ChatGPT?" — the old step-1 hook promoted to the warm-up:
+   handbook.pdf → ChatGPT works for one person/seat, doesn't scale to every student.
+3. "Why not any ready-made chatbot?" — Chrome-vs-chatbot analogy, the 4 reasons
+   (diversified expectations / young field / no-code tools limited / field moves fast),
+   plus an amber teaser line ("every domain adds needs of its own — hold that thought")
+   that slide 13 calls back.
+4. "MetMate at a glance" — coarse two-lane birdseye (built once: Documents → Index; live:
+   Question → Search → Draft → Check → Reply) + three context chips: chatbot as the classic
+   first LLM-course project (buildable locally), no standard blueprint yet (this is one
+   way: ours), real users → three API providers (OpenAI = meaning-points + fast chores,
+   Anthropic = writes answers, Cohere = re-ranks results).
+5. "Phase 1 — just match the words" — word-overlap search mechanism, passage A/B/C bars.
+6. "Phase 1 breaks: right words, wrong rule" — library 24/7 vs Exam Period Appendix
+   (Bug1 stand-in), match scores shown, "phase 1 is dead".
+7. "Phase 2 — search by meaning" — embeddings, queen − female + male ≈ king ("half the fix").
+8. "Phase 2 — say when each rule applies" — scope tags (EXAM PERIOD ONLY / TERM TIME)
+   attached at storage; MetMate now answers the library question correctly.
+9. "Phase 3 — it refuses what it knows" — verifier added, then the special-consideration
+   false-refusal (Bug2 stand-in): master list has six, passages only two, answer killed.
+10. "Phase 3 — the right evidence per claim" — existence/how-many → master list; detail →
+    actual passage; plus the folded-in honesty capstone (search once more → honest
+    "I don't know"). The old standalone "never make it up" step-5 slide was CUT (too many
+    concepts for this cohort) and reduced to this slide's bottom strip.
+11. "The whole system — built by its failures" — full two-lane architecture colour-coded
+    by phase (grey = phase 1 skeleton, teal = phase 2 meaning+applicability, amber =
+    phase 3 verification+honesty), with legend + payoff line "every coloured box exists
+    because a failure forced it".
+12. "What we skipped (look these up later)" — six chips: hybrid retrieval, reranking,
+    query rewriting, question splitting, conversation memory, two-model design. Fulfils
+    the slide-1 terminology promise; keeps the deep machinery out of the main story.
+13. "Make it fit the domain" — callback to slide 3's teaser; GIS (aware of user's live map
+    view/actions), weather (must forecast), finance (analyses in idle time) + "the recipe
+    is public — fitting it to a domain is yours" + thank-you/questions line.
+
+Phase slides (5–10) carry a top-right MINI-MAP (Docs/Index over Question/Search/Draft/
+Check/Reply) with the active box teal-filled and an amber magnifying-glass lens over it —
+implemented in `add_mini_map()` in `build_deck.py`. Slide 11 reuses the same two-lane
+shape expanded. If you add/remove phase slides, keep the mini-map's active box honest.
 
 **Build workflow (important, avoid losing Arif's edits):**
 - `lecture/build_deck.py` is the source of truth for the pptx CONTENT (text, layout, colors).
