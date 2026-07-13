@@ -1,0 +1,17 @@
+why not off the shelf - last slide
+
+embedding - king queen
+
+pdf simplify
+
+openai api, anthropic api, cohere, embedding 
+
+ollama - local
+
+terminologies
+====
+additional - context - AI - reasonaning
+===
+birds eye view - only one way - top -level
+
+embedding not ai
