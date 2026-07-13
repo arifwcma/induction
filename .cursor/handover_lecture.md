@@ -7,6 +7,30 @@ real-world AI case study, to a university IT class. It is not a coding task. Rea
 R1/R2…, one best option, no walls of text). This file holds only what is NOT in the
 other `.cursor` docs.
 
+## 0. START HERE — current state (read this first)
+- Arif is picking this session up from ANOTHER PC (git pull first). Continue seamlessly.
+- **The live plan lives in `.cursor/lecture_project.md`** — the agreed sequence
+  (1: build Arif's end-to-end mental model → 2: build the deck → 3: write transcripts),
+  the time budget, the two-lifecycle system skeleton, and a TODO checklist of every
+  explanation still owed to him. UPDATE that file as you progress; tick items off.
+- **`.cursor/lesson.md`** holds the detailed explanations already given, verbatim, so
+  Arif can re-read them WITHOUT spending agent tokens. When you explain a new part in
+  detail, APPEND it there too.
+- **Where we are:** the mental-model phase is in progress. Done so far: the whole system
+  explained as two lifecycles (A. Ingestion, B. Query time), and **Part A (ingestion, all
+  6 steps) explained in detail** (in `lesson.md`). NEXT owed to Arif: Part B (query time),
+  starting wherever he picks — he was offered B overall, or a deep dive on embeddings, or
+  tightening A. The deck is NOT started yet (build only after the mental model is solid and
+  he signs off a plan).
+- **Emotional context (matters):** Arif has never delivered an hour-long lecture (only a
+  ~30-min PhD confirmation to 4–5 people and a few conference minutes). He is nervous, and
+  candidly says the project was mostly built by Claude — he found/co-fixed the bugs but does
+  NOT yet have strict end-to-end knowledge. That is exactly why we do the mental-model phase
+  before slides. Be encouraging without patronising; the content risk is low (it's his own
+  project), the real lever is delivery confidence via rehearsal. Reassure with facts.
+- **Deadline:** lecture is Tue 14 July 2026, 2:00 pm. This session ran ~28h before, with
+  ~5h of Arif's own time available for slides + practice. Recompute the remaining runway.
+
 ## 1. The engagement
 - Arif is a GUEST LECTURER for a 1-hour session in unit **ICT108** at **Sydney Met**
   (Sydney Metropolitan). He is delivering it in person + live-streamed.
