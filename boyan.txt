@@ -1,4 +1,58 @@
-Intro
+Intro:
+
+Thank you Dr Dristi Datta for your kind introduction. Hello everyone. My name is Arifur Rahman. I work as an Analyst Programmer at Wimmera CMA, based in Horsham, Victoria. At my work, I have built several AI tools. Most are still experimental; only a handful are in real daily use, solving actual problems. One of those is a chatbot. In this session, I'll share how I think about the common challenges in building chatbots, and some fundamental principles for addressing them.
+
+To illustrate, imagine we're building a chatbot for Sydney Met that helps students understand university policies. Here's the name I came up with: MetMate — I'm sure you can suggest a better one.
+
+Throughout the talk, we'll chase one example question: 'What are the library opening hours?
+
+I'll be careful with terminology and explain each term as we meet it. If a term looks unfamiliar, don't worry — just follow along; they'll keep coming back
+
+
+Slide 2
+==========
+
+Let's think about the simplest possible case. Sydney Met has a document — handbook.pdf. We can just upload it to ChatGPT and ask it our questions. And that works. I want to give you an idea of what happens under the hood — which you can probably guess. At a high level, ChatGPT pulls the text out of the PDF, appends your question to it, and passes the whole thing to its model to get an answer. That's it.
+
+Slide 3
+=======
+
+But this approach has several problems. Either every student needs a paid licence, or we'd have to build our own billion-dollar, ChatGPT-like product. And there are many documents, always changing — it's impractical to keep uploading the right ones into every chat session.
+
+Here we meet our first term: the knowledge base. It's the source of truth the chatbot is expected to answer from — in our case, simply the collection of Sydney Met policy documents.
+
+Slide 4
+========
+
+An obvious solution is to build a web application. Students get an interface like ChatGPT and can ask their questions there. In the backend, we extract the text from the knowledge base, append the question, and send it to ChatGPT's model through the OpenAI API. OpenAI, as you may know, is the company behind ChatGPT — so this is basically what the ChatGPT app itself does under the hood
+
+Slide 5
+========
+
+Let's take a closer look at this approach. We send the whole message — shown in the big box on the left — to the OpenAI API. Two more terms arrive here. One is the prompt: the entire text in that box. The other is the context: the part of the prompt we give the model as reference material to answer from.
+
+Slide 6
+============
+One very important thing to notice here: not everything in this picture is AI. Look at the box on the right — that is the only AI part. The rest is ordinary code. A quick way to tell them apart — not a perfect definition, but a useful one — is deterministic versus non-deterministic behaviour. Ordinary code is deterministic: same input, same output, every time. The AI part is non-deterministic: the same question can give a differently-worded answer each time.
+
+Slide 7
+==========
+
+Now look at the problem with this approach. If we have 300 PDFs, that's around 2 million words. So for every prompt, we're sending 2 million words — most of them irrelevant to the question. That's very inefficient. In fact, my first working bot was built exactly this way, and it took about a minute to answer each question.
+
+Slide 8
+==========
+An improvement — using some ordinary, deterministic code — is chunking, a new term we meet here. A chunk is just a small piece of continuous text, roughly a paragraph. We set a limit — say 50 words. So the whole knowledge base is divided into thousands of 50-word chunks. Then, for a given question, we pick only the top 5 or 10 chunks whose words best match the question, and send just those to OpenAI
+
+Slide 9
+==========
+Let's look at an example. For chunk A, three words match the question — the highest of any chunk — so we pick it. OpenAI can then answer correctly and quickly from it easily. This method is called BM25 — no AI required — and it powered search engines for decades.
+
+Slide 10
+=============
+Here we hit a pitfall of BM25. Take the question 'Can I access the library 24/7?' The chunk in the red box, in the middle-left, has more matching keywords — but it's for a special case: the exam period. The chunk on the right actually holds the answer — the general rule — but it matches fewer keywords. So we'd mistakenly send the left chunk, and OpenAI would confidently give the wrong answer.
+
+
 
 MetMate
 
