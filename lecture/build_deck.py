@@ -17,12 +17,16 @@ WRONG = RGBColor(0xE0, 0x6C, 0x6C)
 FOOTER_BG = RGBColor(0x0F, 0x22, 0x40)
 
 FONT = "Segoe UI"
+MONO = "Consolas"
 SLIDE_W = 13.333
 SLIDE_H = 7.5
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOGO_PATH = os.path.join(HERE, "lecture_resources", "logo-wimmera-white.png")
 OUT_PATH = os.path.join(HERE, "deck.pptx")
+
+SPEAKER_NAME = "Dr Mohammad Arifur Rahman"
+SPEAKER_ROLE = "Analyst Programmer  ·  Wimmera CMA, Victoria"
 
 
 def solid(shape, color):
@@ -44,7 +48,7 @@ def set_letterspacing(run, points):
     rPr.set("spc", str(int(points * 100)))
 
 
-def txt(slide, x, y, w, h, lines, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+def txt(slide, x, y, w, h, lines, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, font=FONT):
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = box.text_frame
     tf.word_wrap = True
@@ -61,7 +65,7 @@ def txt(slide, x, y, w, h, lines, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
         r = p.add_run()
         r.text = text
         f = r.font
-        f.name = FONT
+        f.name = font
         f.size = Pt(size)
         f.color.rgb = color
         f.bold = bold
@@ -77,6 +81,14 @@ def card(slide, x, y, w, h, fill=PANEL, line_color=PANEL_LINE, radius=0.06):
     return shape
 
 
+def frame(slide, x, y, w, h, line_color, width_pt=1.5, radius=0.08):
+    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+    shape.fill.background()
+    outline(shape, line_color, width_pt)
+    shape.adjustments[0] = radius
+    return shape
+
+
 def circle(slide, cx, cy, diameter, fill=TEAL):
     shape = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - diameter / 2), Inches(cy - diameter / 2),
                                     Inches(diameter), Inches(diameter))
@@ -85,18 +97,19 @@ def circle(slide, cx, cy, diameter, fill=TEAL):
     return shape
 
 
-def centered_label(shape, text, size, color, bold=True):
+def centered_label(shape, text, size, color, bold=True, font=FONT):
     tf = shape.text_frame
     tf.margin_left = 0
     tf.margin_right = 0
     tf.margin_top = 0
     tf.margin_bottom = 0
+    tf.word_wrap = True
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     r = p.add_run()
     r.text = text
-    r.font.name = FONT
+    r.font.name = font
     r.font.size = Pt(size)
     r.font.bold = bold
     r.font.color.rgb = color
@@ -116,51 +129,45 @@ def straight_line(slide, x1, y1, x2, y2, color, width_pt):
     return shape
 
 
-MAP_PREP_BOXES = ["Docs", "Index"]
-MAP_LIVE_BOXES = ["Question", "Search", "Draft", "Check", "Reply"]
+def add_logo(slide, height, top=0.35, right_margin=0.45):
+    if not os.path.exists(LOGO_PATH):
+        return
+    pic = slide.shapes.add_picture(LOGO_PATH, Inches(0), Inches(top), height=Inches(height))
+    pic.left = Inches(SLIDE_W - right_margin) - pic.width
 
 
-def add_mini_map(slide, active_names):
-    left = 9.35
-    top = 0.42
-    box_w = 0.62
-    box_h = 0.30
-    gap = 0.07
-    live_y = top + box_h + 0.14
-
-    def draw_map_box(name, x, y):
-        is_active = name in active_names
-        shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(box_w), Inches(box_h))
-        shape.adjustments[0] = 0.18
-        if is_active:
-            solid(shape, TEAL)
-            no_line(shape)
-            centered_label(shape, name, 7.5, BG, bold=True)
-        else:
-            solid(shape, PANEL)
-            outline(shape, PANEL_LINE, 0.75)
-            centered_label(shape, name, 7.5, MUTED, bold=False)
-        if is_active:
-            lens_w = box_w + 0.2
-            lens_h = box_h + 0.2
-            cx = x + box_w / 2
-            cy = y + box_h / 2
-            lens = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - lens_w / 2), Inches(cy - lens_h / 2),
-                                           Inches(lens_w), Inches(lens_h))
-            lens.fill.background()
-            outline(lens, AMBER, 1.75)
-            straight_line(slide, cx + lens_w * 0.33, cy + lens_h * 0.42,
-                          cx + lens_w * 0.33 + 0.13, cy + lens_h * 0.42 + 0.13, AMBER, 2.25)
-
-    for i, name in enumerate(MAP_PREP_BOXES):
-        draw_map_box(name, left + i * (box_w + gap), top)
-    straight_line(slide, left + 1.5 * box_w + gap, top + box_h,
-                  left + 1.5 * box_w + gap, live_y, MUTED, 1.0)
-    for i, name in enumerate(MAP_LIVE_BOXES):
-        draw_map_box(name, left + i * (box_w + gap), live_y)
+def add_footer(slide, prs):
+    fh = 0.55
+    fy = SLIDE_H - fh
+    footer = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(fh))
+    solid(footer, FOOTER_BG)
+    no_line(footer)
+    faccent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(0.04))
+    solid(faccent, TEAL)
+    no_line(faccent)
+    txt(slide, 0.65, fy, 5.0, fh, [("ICT108  ·  MetMate case study", 10, MUTED, False, False, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    right_box = slide.shapes.add_textbox(Inches(5.8), Inches(fy), Inches(SLIDE_W - 5.8 - 0.45), Inches(fh))
+    tf = right_box.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.word_wrap = False
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.RIGHT
+    r1 = p.add_run()
+    r1.text = SPEAKER_NAME
+    r1.font.name = FONT
+    r1.font.size = Pt(10.5)
+    r1.font.bold = True
+    r1.font.color.rgb = TEAL
+    r2 = p.add_run()
+    r2.text = "   ·   " + SPEAKER_ROLE
+    r2.font.name = FONT
+    r2.font.size = Pt(10)
+    r2.font.color.rgb = MUTED
+    return fy
 
 
-def base_slide(prs, eyebrow_label, title, notes, mini_map_active=None):
+def base_slide(prs, eyebrow_label, title, notes):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
 
     bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height)
@@ -171,37 +178,72 @@ def base_slide(prs, eyebrow_label, title, notes, mini_map_active=None):
     solid(strip, TEAL)
     no_line(strip)
 
-    eb = txt(slide, 0.65, 0.4, 8.5, 0.4, [(eyebrow_label, 12.5, TEAL, True, False, None)])
+    eb = txt(slide, 0.65, 0.4, 9.5, 0.4, [(eyebrow_label, 12.5, TEAL, True, False, None)])
     set_letterspacing(eb.text_frame.paragraphs[0].runs[0], 2.2)
 
-    txt(slide, 0.63, 0.74, 8.6, 0.9, [(title, 30, WHITE, True, False, 1.0)])
+    txt(slide, 0.63, 0.74, 10.6, 0.9, [(title, 30, WHITE, True, False, 1.0)])
 
     ul = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.68), Inches(1.5), Inches(1.3), Inches(0.06))
     solid(ul, AMBER)
     no_line(ul)
 
-    fh = 0.55
-    fy = SLIDE_H - fh
-    footer = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(fh))
-    solid(footer, FOOTER_BG)
-    no_line(footer)
-    faccent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(0.04))
-    solid(faccent, TEAL)
-    no_line(faccent)
-    txt(slide, 0.65, fy, 8.0, fh, [("ICT108  ·  MetMate case study", 10.5, MUTED, False, False, None)],
-        anchor=MSO_ANCHOR.MIDDLE)
-
-    if mini_map_active:
-        add_mini_map(slide, mini_map_active)
+    add_logo(slide, 0.5)
+    add_footer(slide, prs)
 
     slide.notes_slide.notes_text_frame.text = notes
     return slide
 
 
-def failure_chip(slide, text, x=8.6, y=1.62, w=4.05):
-    chip = card(slide, x, y, w, 0.55, fill=PANEL, line_color=WRONG)
-    txt(slide, x + 0.15, y, w - 0.3, 0.55, [(text, 11.5, WRONG, True, True, None)], anchor=MSO_ANCHOR.MIDDLE)
+def failure_chip(slide, text, x=0.9, y=1.85, w=4.0):
+    chip = card(slide, x, y, w, 0.52, fill=PANEL, line_color=WRONG)
+    txt(slide, x + 0.18, y, w - 0.36, 0.52, [(text, 11.5, WRONG, True, True, None)], anchor=MSO_ANCHOR.MIDDLE)
     return chip
+
+
+def term_chip(slide, x, y, w, h, term, definition, def_size=10.5):
+    chip = card(slide, x, y, w, h, fill=PANEL, line_color=TEAL)
+    box = slide.shapes.add_textbox(Inches(x + 0.2), Inches(y), Inches(w - 0.4), Inches(h))
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_left = 0
+    tf.margin_right = 0
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    p = tf.paragraphs[0]
+    p.line_spacing = 1.12
+    r1 = p.add_run()
+    r1.text = term
+    r1.font.name = FONT
+    r1.font.size = Pt(12.5)
+    r1.font.bold = True
+    r1.font.color.rgb = TEAL
+    r2 = p.add_run()
+    r2.text = "  —  " + definition
+    r2.font.name = FONT
+    r2.font.size = Pt(def_size)
+    r2.font.color.rgb = MUTED
+    return chip
+
+
+def flow_box(slide, x, y, w, h, label, line_color, size=11.5, text_color=WHITE, fill=PANEL):
+    shape = card(slide, x, y, w, h, fill=fill, line_color=line_color)
+    txt(slide, x + 0.08, y, w - 0.16, h, [(label, size, text_color, True, False, 1.08)],
+        align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    return shape
+
+
+def flow_row(slide, left, right, y, h, items, gap=0.26, size=11.5, arrow_color=TEAL):
+    n = len(items)
+    w = (right - left - gap * (n - 1)) / n
+    positions = []
+    for i, (label, line_color) in enumerate(items):
+        x = left + i * (w + gap)
+        flow_box(slide, x, y, w, h, label, line_color, size=size)
+        positions.append((x, w))
+        if i < n - 1:
+            arrow_right(slide, x + w + 0.02, y + h / 2, gap - 0.04, h=0.18, fill=arrow_color)
+    return positions
 
 
 def build_s01_title(prs, notes):
@@ -213,717 +255,941 @@ def build_s01_title(prs, notes):
     solid(strip, TEAL)
     no_line(strip)
 
-    eb = txt(slide, 0.65, 1.35, 11.5, 0.4,
-             [("GUEST LECTURE   ·   ICT108", 13, TEAL, True, False, None)])
+    eb = txt(slide, 0.65, 1.25, 11.0, 0.4,
+             [("GUEST LECTURE   ·   ICT108   ·   SYDNEY MET", 13, TEAL, True, False, None)])
     set_letterspacing(eb.text_frame.paragraphs[0].runs[0], 2.4)
 
-    txt(slide, 0.62, 1.8, 12.0, 1.3, [("Talk to Your Documents", 48, WHITE, True, False, 1.0)])
+    txt(slide, 0.62, 1.7, 12.0, 1.3, [("Talk to Your Documents", 46, WHITE, True, False, 1.0)])
 
-    ul = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.68), Inches(2.85), Inches(1.9), Inches(0.08))
+    ul = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.68), Inches(2.72), Inches(1.9), Inches(0.08))
     solid(ul, AMBER)
     no_line(ul)
 
-    txt(slide, 0.65, 3.1, 11.5, 0.7,
-        [("Building an AI assistant that answers only from your documents — the way it happens in real life.",
+    txt(slide, 0.65, 3.0, 11.8, 0.6,
+        [("How a chatbot that answers from documents really works — built from zero, phase by phase.",
           17, MUTED, False, False, 1.1)])
 
-    txt(slide, 0.65, 4.0, 8.5, 0.5, [("Case study: MetMate", 15, TEAL, True, False, None)])
-    txt(slide, 0.65, 4.45, 9.5, 0.5,
-        [("A chatbot answering student questions about Sydney Met's rules.", 13, MUTED, False, True, None)])
+    txt(slide, 0.65, 3.85, 11.5, 0.45, [("Case study: MetMate", 15, TEAL, True, False, None)])
+    txt(slide, 0.65, 4.28, 11.5, 0.45,
+        [("An invented chatbot answering Sydney Met student questions — enrolment, library, exams.",
+          13, MUTED, False, True, None)])
 
-    note = card(slide, 0.65, 5.2, 9.4, 0.85, fill=PANEL, line_color=PANEL_LINE)
-    txt(slide, 0.9, 5.2, 8.9, 0.85,
-        [("Concepts over terminology today — new terms arrive daily. Miss one? It will come back,", 12, MUTED, False, True, 1.25),
-         ("or you can look it up later. You will follow the ideas either way.", 12, MUTED, False, True, None)],
+    promise = card(slide, 0.65, 5.0, 10.2, 0.95, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 0.92, 5.0, 9.7, 0.95,
+        [("Concepts over terminology: every technical term arrives only when the story needs it,", 12, MUTED, False, True, 1.25),
+         ("defined in plain English. Nothing to memorise up front — everything is look-up-able later.", 12, MUTED, False, True, None)],
         anchor=MSO_ANCHOR.MIDDLE)
 
-    if os.path.exists(LOGO_PATH):
-        logo_h = 1.1
-        logo_w_guess = logo_h * (1024 / 750)
-        lx = SLIDE_W - 0.6 - logo_w_guess
-        slide.shapes.add_picture(LOGO_PATH, Inches(lx), Inches(0.5), height=Inches(logo_h))
+    txt(slide, 0.65, 6.25, 12.2, 0.4,
+        [("Phase 1  Just ask ChatGPT   →   Phase 2  Our own bot   →   Phase 3  Search first   →   "
+          "Phase 4  Search by meaning   →   Phase 5  Toward the real world", 10.5, TEAL, False, False, None)])
 
-    fh = 0.9
-    fy = SLIDE_H - fh
-    footer = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(fh))
-    solid(footer, FOOTER_BG)
-    no_line(footer)
-    faccent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(0.05))
-    solid(faccent, TEAL)
-    no_line(faccent)
-
-    txt(slide, 0.65, fy, 7.0, fh, [
-        ("Tuesday 14 July 2026, 2–3 PM", 13, WHITE, False, False, None),
-    ], anchor=MSO_ANCHOR.MIDDLE)
-
-    frbox = slide.shapes.add_textbox(Inches(6.0), Inches(fy), Inches(6.68), Inches(fh))
-    frtf = frbox.text_frame
-    frtf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    frtf.word_wrap = True
-    p1 = frtf.paragraphs[0]
-    p1.alignment = PP_ALIGN.RIGHT
-    r1 = p1.add_run(); r1.text = "Dr Mohammad Arifur Rahman"
-    r1.font.name = FONT; r1.font.size = Pt(13.5); r1.font.color.rgb = TEAL; r1.font.bold = True
-    p2 = frtf.add_paragraph()
-    p2.alignment = PP_ALIGN.RIGHT
-    r2 = p2.add_run(); r2.text = "Analyst Programmer  ·  Wimmera CMA, Victoria"
-    r2.font.name = FONT; r2.font.size = Pt(10.5); r2.font.color.rgb = MUTED
+    add_logo(slide, 1.0, top=0.45)
+    add_footer(slide, prs)
 
     slide.notes_slide.notes_text_frame.text = notes
     return slide
 
 
-def build_s02_upload_chatgpt(prs, notes):
-    slide = base_slide(prs, "WARM-UP", "Why not just upload it to ChatGPT?", notes)
-    failure_chip(slide, "✗ works for one — can't scale to all")
+def build_s02_upload(prs, notes):
+    slide = base_slide(prs, "PHASE 1  ·  JUST ASK CHATGPT", "Upload a PDF, ask a question", notes)
 
-    txt(slide, 1.1, 2.45, 10.5, 0.5, [("The laziest possible chatbot: upload the handbook to an existing product.", 15, MUTED, False, True, None)])
+    txt(slide, 0.9, 1.85, 11.6, 0.4,
+        [("The simplest possible start — no code at all.", 13.5, MUTED, False, True, None)])
 
-    doc = card(slide, 1.6, 3.15, 2.2, 2.4, fill=PANEL, line_color=TEAL)
-    txt(slide, 1.85, 3.4, 1.7, 0.4, [("student", 12, MUTED, False, False, None)], align=PP_ALIGN.CENTER)
-    txt(slide, 1.85, 3.68, 1.7, 0.4, [("handbook.pdf", 13, WHITE, True, False, None)], align=PP_ALIGN.CENTER)
-    for i in range(4):
-        line_shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.95), Inches(4.25 + i * 0.28), Inches(1.7), Inches(0.06))
-        solid(line_shape, PANEL_LINE)
-        no_line(line_shape)
-
-    txt(slide, 4.15, 3.1, 1.55, 0.3, [("upload to", 11, MUTED, False, True, None)], align=PP_ALIGN.CENTER)
-    arrow_right(slide, 4.0, 3.45, 1.4, fill=TEAL)
-
-    bubble = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(5.65), Inches(3.15), Inches(2.75), Inches(2.4))
-    solid(bubble, PANEL)
-    outline(bubble, TEAL, 1.25)
-    bubble.adjustments[0] = 0.12
-    txt(slide, 5.9, 3.35, 2.3, 0.4, [("ChatGPT", 15, TEAL, True, False, None)], align=PP_ALIGN.CENTER)
-    txt(slide, 5.9, 3.85, 2.3, 1.5, [("Answers well — for one document, one person, one paid seat", 13, WHITE, False, False, 1.2)],
+    chat = card(slide, 0.9, 2.4, 3.5, 3.5, fill=PANEL, line_color=TEAL)
+    bar = card(slide, 0.9, 2.4, 3.5, 0.45, fill=FOOTER_BG, line_color=TEAL)
+    txt(slide, 1.1, 2.4, 3.1, 0.45, [("ChatGPT", 12.5, TEAL, True, False, None)], anchor=MSO_ANCHOR.MIDDLE)
+    pill = card(slide, 1.15, 3.05, 2.1, 0.42, fill=FOOTER_BG, line_color=PANEL_LINE, radius=0.5)
+    txt(slide, 1.35, 3.05, 1.8, 0.42, [("handbook.pdf", 10.5, WHITE, False, False, None)], anchor=MSO_ANCHOR.MIDDLE)
+    q = card(slide, 1.15, 3.65, 3.0, 0.8, fill=PANEL, line_color=TEAL, radius=0.25)
+    txt(slide, 1.35, 3.65, 2.6, 0.8, [("What are the library opening hours?", 11, WHITE, False, False, 1.15)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    a = card(slide, 1.15, 4.6, 3.0, 0.8, fill=FOOTER_BG, line_color=PANEL_LINE, radius=0.25)
+    txt(slide, 1.35, 4.6, 2.6, 0.8, [("8am–10pm on term days. ✓", 11, MUTED, False, False, 1.15)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    txt(slide, 0.9, 6.0, 3.5, 0.4, [("one person, one chat — it works", 11, TEAL, False, True, None)],
         align=PP_ALIGN.CENTER)
 
-    txt(slide, 8.9, 2.85, 3.75, 3.2, [
-        ("To give this to every student, Sydney Met would need to:", 13.5, TEAL, True, False, 1.25),
-        ("build its own ChatGPT-like product, or", 13, WHITE, False, False, 1.3),
-        ("buy a paid subscription per student", 13, WHITE, False, False, 1.3),
-        ("...while documents keep changing and", 13, WHITE, False, False, 1.3),
-        ("thousands ask questions at once.", 13, WHITE, False, False, None),
+    txt(slide, 4.55, 3.6, 1.0, 0.35, [("under the", 10, MUTED, False, True, None)], align=PP_ALIGN.CENTER)
+    txt(slide, 4.55, 3.85, 1.0, 0.35, [("hood", 10, MUTED, False, True, None)], align=PP_ALIGN.CENTER)
+    arrow_right(slide, 4.55, 4.45, 0.85, fill=TEAL)
+
+    big = card(slide, 5.55, 2.4, 4.0, 3.5, fill=PANEL, line_color=AMBER)
+    txt(slide, 5.8, 2.55, 3.5, 0.4, [("what the model actually receives", 11, AMBER, True, False, None)])
+    txt(slide, 5.8, 3.05, 3.5, 2.4, [
+        ("<entire text of handbook.pdf>", 11.5, MUTED, False, True, 1.25),
+        ("… 200 pages of it …", 11.5, MUTED, False, True, 1.25),
+        ("+", 13, WHITE, True, False, 1.25),
+        ("\u201cWhat are the library", 11.5, WHITE, False, False, 1.2),
+        ("opening hours?\u201d", 11.5, WHITE, False, False, None),
+    ], font=MONO)
+    txt(slide, 5.8, 5.45, 3.5, 0.4, [("ONE long piece of text", 12, TEAL, True, False, None)])
+
+    arrow_right(slide, 9.7, 4.15, 0.7, fill=TEAL)
+
+    model = card(slide, 10.55, 3.3, 2.15, 1.7, fill=PANEL, line_color=TEAL)
+    txt(slide, 10.7, 3.55, 1.85, 0.4, [("the model", 13, TEAL, True, False, None)], align=PP_ALIGN.CENTER)
+    txt(slide, 10.7, 4.0, 1.85, 0.9, [("reads it all, writes the answer", 11, WHITE, False, False, 1.2)],
+        align=PP_ALIGN.CENTER)
+
+    note = card(slide, 4.55, 6.15, 8.15, 0.6, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 4.8, 6.15, 7.7, 0.6,
+        [("Today: TEXT only. Images, audio, complex layouts — a story for another day.", 11, MUTED, False, True, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    return slide
+
+
+def build_s03_doesnt_scale(prs, notes):
+    slide = base_slide(prs, "PHASE 1  ·  IT DOESN'T SCALE", "Why this doesn't scale", notes)
+
+    txt(slide, 0.9, 1.85, 11.6, 0.4,
+        [("It works for one person. Now give it to 30,000 students.", 13.5, MUTED, False, True, None)])
+
+    problems = [
+        ("It's ChatGPT's product",
+         "We can't put ChatGPT itself on the university website. Building our own ChatGPT-like product from scratch is a huge job."),
+        ("A paid seat per student",
+         "The alternative: every student buys their own subscription — thousands of seats, just to ask about the handbook."),
+        ("Many documents, always changing",
+         "One answer may need handbook + library rules + exam procedures. They change all year. Re-uploading the current pile into every chat? Nobody will."),
+    ]
+    left = 0.9
+    gap = 0.25
+    w = (SLIDE_W - 0.9 - left - 2 * gap) / 3
+    for i, (head, body) in enumerate(problems):
+        x = left + i * (w + gap)
+        card(slide, x, 2.4, w, 2.45, fill=PANEL, line_color=PANEL_LINE)
+        num = circle(slide, x + 0.42, 2.82, 0.44, fill=AMBER)
+        centered_label(num, str(i + 1), 14, BG)
+        txt(slide, x + 0.75, 2.6, w - 0.95, 0.75, [(head, 13.5, WHITE, True, False, 1.1)])
+        txt(slide, x + 0.25, 3.45, w - 0.5, 1.3, [(body, 11, MUTED, False, False, 1.25)])
+
+    term_chip(slide, 0.9, 5.15, 11.55, 0.75,
+              "Knowledge Base (KB)",
+              "the pile of official documents the bot must answer from. Our first term — "
+              "every teal box like this one is a new term entering the story.")
+
+    txt(slide, 0.9, 6.2, 11.6, 0.5,
+        [("What we want: ONE bot, OURS, on the university site — always reading the CURRENT documents. So we build.",
+          13.5, AMBER, False, True, None)])
+    return slide
+
+
+def build_s04_own_bot(prs, notes):
+    slide = base_slide(prs, "PHASE 2  ·  OUR OWN BOT", "Our own bot — same trick, our pipes", notes)
+
+    flow_row(slide, 0.9, 12.43, 2.3, 1.05, [
+        ("Student's browser\nchat page", PANEL_LINE),
+        ("Our server", PANEL_LINE),
+        ("OpenAI API\nthe model behind ChatGPT", TEAL),
+    ], size=12.5)
+
+    txt(slide, 0.9, 3.5, 3.8, 0.35, [("ordinary web dev", 10, MUTED, False, True, None)], align=PP_ALIGN.CENTER)
+    txt(slide, 4.96, 3.5, 3.8, 0.35, [("ordinary backend", 10, MUTED, False, True, None)], align=PP_ALIGN.CENTER)
+    txt(slide, 9.02, 3.5, 3.5, 0.35, [("their computers, our text", 10, MUTED, False, True, None)], align=PP_ALIGN.CENTER)
+
+    payload = card(slide, 3.3, 4.05, 6.7, 1.15, fill=PANEL, line_color=AMBER)
+    txt(slide, 3.55, 4.2, 6.2, 0.4, [("what our server sends — the phase-1 trick, through pipes:", 11, AMBER, True, False, None)])
+    txt(slide, 3.55, 4.6, 6.2, 0.55, [
+        ("every KB document  +  the student's question", 12, WHITE, False, False, 1.2),
+        ("\u2192  one big string", 12, TEAL, True, False, None),
+    ], font=MONO)
+
+    term_chip(slide, 0.9, 5.5, 7.1, 0.85,
+              "API",
+              "a doorway for programs: our code sends text over the internet, the model's reply "
+              "comes back. ChatGPT is the product — OpenAI is the company and the API.")
+
+    note = card(slide, 8.25, 5.5, 4.2, 0.85, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 8.5, 5.5, 3.7, 0.85,
+        [("Local option: run a free model on your own machine (e.g. Ollama). Same story either way.",
+          10.5, MUTED, False, True, 1.2)], anchor=MSO_ANCHOR.MIDDLE)
+
+    txt(slide, 0.9, 6.55, 11.6, 0.4,
+        [("For the rest of the talk: we use the OpenAI API.", 12, TEAL, False, True, None)])
+    return slide
+
+
+def build_s05_prompt(prs, notes):
+    slide = base_slide(prs, "PHASE 2  ·  OUR OWN BOT", "What the model actually receives", notes)
+
+    box = card(slide, 0.9, 2.0, 6.9, 4.25, fill=FOOTER_BG, line_color=TEAL)
+    txt(slide, 1.35, 2.0, 6.0, 4.25, [
+        ("Context:", 17, TEAL, True, False, 1.45),
+        ("    <every document in the KB>", 15, MUTED, False, True, 1.45),
+        ("", 10, MUTED, False, False, 1.0),
+        ("Question:", 17, TEAL, True, False, 1.45),
+        ("    <the student's question>", 15, MUTED, False, True, 1.45),
+        ("", 10, MUTED, False, False, 1.0),
+        ("Answer using only the", 17, WHITE, False, False, 1.45),
+        ("context above.", 17, WHITE, False, False, None),
+    ], font=MONO, anchor=MSO_ANCHOR.MIDDLE)
+
+    term_chip(slide, 8.1, 2.0, 4.35, 1.0,
+              "Prompt", "the full text we send to the model. This is literally everything it sees.")
+    term_chip(slide, 8.1, 3.2, 4.35, 1.0,
+              "Context", "the reference text we paste into the prompt, for the model to answer from.")
+
+    note = card(slide, 8.1, 4.4, 4.35, 1.85, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 8.35, 4.6, 3.85, 1.5, [
+        ("No memory of Sydney Met.", 11.5, WHITE, False, False, 1.35),
+        ("No hidden database.", 11.5, WHITE, False, False, 1.35),
+        ("If the right fact is not in the prompt, the model can only guess.", 11.5, MUTED, False, False, 1.25),
     ])
 
-    txt(slide, 1.6, 6.15, 10.3, 0.5, [("We need one shared bot, always current, serving everyone at once — so we build.", 13, WHITE, False, False, None)])
+    txt(slide, 0.9, 6.5, 11.6, 0.45,
+        [("The whole craft of a document chatbot: deciding WHAT goes into this text.", 13.5, AMBER, False, True, None)])
     return slide
 
 
-def build_s03_why_not_ready_made(prs, notes):
-    slide = base_slide(prs, "WARM-UP", "Why not any ready-made chatbot?", notes)
+def build_s06_ai_vs_not(prs, notes):
+    slide = base_slide(prs, "PHASE 2  ·  AI VS NOT-AI", "How much of this is actually AI?", notes)
 
-    left_cx, right_cx = 3.6, 9.7
-    icon_y = 2.45
-    chrome_circle = circle(slide, left_cx, icon_y, 1.25, fill=PANEL)
-    outline(chrome_circle, TEAL, 1.5)
-    txt(slide, left_cx - 1.0, icon_y - 0.25, 2.0, 0.5, [("Chrome", 17, WHITE, True, False, None)],
-        align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    txt(slide, left_cx - 1.6, icon_y + 0.8, 3.2, 0.5, [("common software — we don't build our own", 11, MUTED, False, True, None)],
+    y = 2.55
+    h = 1.0
+    flow_box(slide, 1.15, y, 2.2, h, "Student's browser", PANEL_LINE, size=11.5)
+    arrow_right(slide, 3.42, y + h / 2, 0.34, h=0.18, fill=TEAL)
+    flow_box(slide, 3.83, y, 2.2, h, "Our server", PANEL_LINE, size=11.5)
+    arrow_right(slide, 6.1, y + h / 2, 0.34, h=0.18, fill=TEAL)
+    flow_box(slide, 6.51, y, 2.2, h, "Glue the big string", PANEL_LINE, size=11.5)
+    arrow_right(slide, 8.78, y + h / 2, 0.34, h=0.18, fill=TEAL)
+    flow_box(slide, 9.65, y, 2.55, h, "The model", AMBER, size=12.5)
+
+    frame(slide, 0.95, 2.25, 7.95, 1.6, TEAL, width_pt=1.75)
+    txt(slide, 0.95, 3.95, 7.95, 0.4, [("ORDINARY CODE — deterministic", 12, TEAL, True, False, None)],
+        align=PP_ALIGN.CENTER)
+    frame(slide, 9.45, 2.25, 2.95, 1.6, AMBER, width_pt=1.75)
+    txt(slide, 9.45, 3.95, 2.95, 0.4, [("AI — non-deterministic", 12, AMBER, True, False, None)],
         align=PP_ALIGN.CENTER)
 
-    bot_circle = circle(slide, right_cx, icon_y, 1.25, fill=PANEL)
-    outline(bot_circle, AMBER, 1.5)
-    txt(slide, right_cx - 1.0, icon_y - 0.25, 2.0, 0.5, [("Chatbot", 17, WHITE, True, False, None)],
-        align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    txt(slide, right_cx - 1.6, icon_y + 0.8, 3.2, 0.5, [("...but this, we often build ourselves?", 11, MUTED, False, True, None)],
-        align=PP_ALIGN.CENTER)
+    term_chip(slide, 0.9, 4.65, 5.65, 0.95,
+              "Deterministic", "same input → same output, every time. Testable, predictable, debuggable.")
+    term_chip(slide, 6.8, 4.65, 5.65, 0.95,
+              "Non-deterministic", "same input → the output may vary. Ask twice, get two wordings.")
 
-    txt(slide, left_cx + 0.8, icon_y - 0.15, right_cx - left_cx - 1.6, 0.5,
-        [("vs.", 22, MUTED, True, False, None)], align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-
-    reasons = [
-        "Expectations are diversified: security, reliability, speed, cost",
-        "The field is young — common expectations aren't well defined yet",
-        "\"No-code\" builders exist — more complicated in practice, limited customisation",
-        "It moves so fast, check again tomorrow",
-    ]
-    top = 3.95
-    row_h = 0.56
-    for i, reason in enumerate(reasons):
-        y = top + i * row_h
-        num = circle(slide, 1.15, y + 0.2, 0.42, fill=TEAL)
-        centered_label(num, str(i + 1), 14, BG)
-        txt(slide, 1.55, y, 10.3, 0.5, [(reason, 14.5, WHITE, False, False, None)], anchor=MSO_ANCHOR.MIDDLE)
-
-    txt(slide, 1.15, 6.35, 11.0, 0.45,
-        [("...and beyond these: every domain adds needs of its own — hold that thought for the end.", 12.5, AMBER, False, True, None)])
+    txt(slide, 0.9, 5.9, 11.6, 0.5,
+        [("An \u201cAI system\u201d is mostly NOT AI — one AI box, surrounded by ordinary software.", 15, AMBER, True, False, None)])
+    txt(slide, 0.9, 6.45, 11.6, 0.4,
+        [("Most of your work as a developer — and most of your value — lives in the deterministic part.", 12, MUTED, False, True, None)])
     return slide
 
 
-def build_s04_birdseye(prs, notes):
-    slide = base_slide(prs, "THE MAP", "MetMate at a glance", notes)
+def build_s07_too_slow(prs, notes):
+    slide = base_slide(prs, "PHASE 2  ·  IT BREAKS", "One question, two million words", notes)
+    failure_chip(slide, "\u2717 too slow to be usable", w=3.2)
 
-    left = 0.9
-    right = SLIDE_W - 0.9
-    n = 5
-    gap = 0.25
-    box_w = (right - left - gap * (n - 1)) / n
+    kb = card(slide, 0.9, 2.65, 3.4, 2.2, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 1.15, 2.85, 2.9, 0.4, [("the KB", 12, MUTED, True, False, None)])
+    txt(slide, 1.15, 3.25, 2.9, 0.6, [("300 PDFs", 20, WHITE, True, False, None)])
+    txt(slide, 1.15, 3.9, 2.9, 0.6, [("\u2248 2,000,000 words", 15, AMBER, True, False, None)])
 
-    def bx(i):
-        return left + i * (box_w + gap)
+    arrow_right(slide, 4.45, 3.75, 0.7, fill=TEAL)
 
-    top_y = 2.3
-    top_h = 0.8
-    txt(slide, left, top_y - 0.37, 8.0, 0.32, [("BUILT ONCE, BEFORE ANY QUESTION", 11, MUTED, True, False, None)])
+    prompt = card(slide, 5.3, 2.65, 3.4, 2.2, fill=PANEL, line_color=AMBER)
+    txt(slide, 5.55, 2.85, 2.9, 0.4, [("the prompt", 12, AMBER, True, False, None)])
+    txt(slide, 5.55, 3.25, 2.9, 1.4, [
+        ("ALL of it, for EVERY question", 13.5, WHITE, True, False, 1.3),
+        ("even \u201cwhat are the library hours?\u201d", 11, MUTED, False, True, None),
+    ])
 
-    card(slide, bx(0), top_y, box_w, top_h, fill=PANEL, line_color=PANEL_LINE)
-    txt(slide, bx(0) + 0.1, top_y, box_w - 0.2, top_h, [("Documents", 13.5, WHITE, True, False, None)],
-        align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-    arrow_right(slide, bx(0) + box_w - 0.02, top_y + top_h / 2, gap + 0.04, h=0.2, fill=TEAL)
+    arrow_right(slide, 8.85, 3.75, 0.7, fill=TEAL)
 
-    card(slide, bx(1), top_y, box_w, top_h, fill=PANEL, line_color=TEAL)
-    txt(slide, bx(1) + 0.1, top_y, box_w - 0.2, top_h, [("Index\n(searchable form)", 13, WHITE, True, False, 1.1)],
-        align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    watch = card(slide, 9.7, 2.65, 2.95, 2.2, fill=PANEL, line_color=WRONG)
+    txt(slide, 9.95, 2.85, 2.45, 0.4, [("the result", 12, WRONG, True, False, None)])
+    txt(slide, 9.95, 3.25, 2.45, 0.6, [("~1 minute", 20, WRONG, True, False, None)])
+    txt(slide, 9.95, 3.9, 2.45, 0.85, [("per answer — my first real bot worked exactly like this", 10.5, MUTED, False, True, 1.2)])
 
-    straight_line(slide, bx(1) + box_w / 2, top_y + top_h + 0.05,
-                  bx(1) + box_w / 2, top_y + top_h + 0.5, TEAL, 2.25)
+    txt(slide, 0.9, 5.1, 11.6, 0.4,
+        [("Almost everything we send is irrelevant to the question being asked.", 12.5, MUTED, False, True, None)])
 
-    bot_y = top_y + top_h + 0.6
-    bot_h = 0.9
-    txt(slide, left, bot_y + bot_h + 0.08, 8.0, 0.32, [("EVERY QUESTION, LIVE", 11, MUTED, True, False, None)])
-
-    labels = ["Student\nquestion", "Search the\nindex", "Draft\nanswer", "Check the\nanswer", "Reply"]
-    for i, label in enumerate(labels):
-        line_color = TEAL if i in (1, 3) else PANEL_LINE
-        card(slide, bx(i), bot_y, box_w, bot_h, fill=PANEL, line_color=line_color)
-        txt(slide, bx(i) + 0.08, bot_y, box_w - 0.16, bot_h, [(label, 13, WHITE, True, False, 1.1)],
-            align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-        if i < n - 1:
-            arrow_right(slide, bx(i) + box_w - 0.02, bot_y + bot_h / 2, gap + 0.04, h=0.2, fill=TEAL)
-
-    chips = [
-        ("The classic first project", "every LLM course starts with a chatbot — with decent hardware you can build one fully on your own machine"),
-        ("No standard blueprint yet", "a young, fast-growing field with many designs — this diagram is one way: the way we built it"),
-        ("Real users → real APIs", "OpenAI: text into meaning-points + fast chores  ·  Anthropic: writes the answers  ·  Cohere: re-ranks results"),
-    ]
-    chip_y = 5.35
-    chip_h = 1.25
-    chip_w = (right - left - 2 * 0.22) / 3
-    for i, (head, body) in enumerate(chips):
-        x = left + i * (chip_w + 0.22)
-        card(slide, x, chip_y, chip_w, chip_h, fill=PANEL, line_color=PANEL_LINE)
-        txt(slide, x + 0.2, chip_y + 0.12, chip_w - 0.4, 0.35, [(head, 12.5, TEAL, True, False, None)])
-        txt(slide, x + 0.2, chip_y + 0.48, chip_w - 0.4, 0.7, [(body, 10, MUTED, False, False, 1.15)])
-    return slide
-
-
-def build_s05_phase1_build(prs, notes):
-    slide = base_slide(prs, "PHASE 1 — BUILD", "Phase 1 — just match the words", notes,
-                       mini_map_active=["Search"])
-
-    txt(slide, 1.1, 2.3, 8.0, 0.45,
-        [("Search = count the words a passage shares with the question. Most overlap wins.", 14, MUTED, False, True, None)])
-
-    qbubble = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.1), Inches(2.9), Inches(7.4), Inches(0.6))
-    solid(qbubble, PANEL)
-    outline(qbubble, TEAL, 1.25)
-    qbubble.adjustments[0] = 0.3
-    txt(slide, 1.4, 2.9, 6.9, 0.6, [("“When is the library open?”", 14, WHITE, True, True, None)],
+    magic = card(slide, 0.9, 5.65, 7.35, 1.05, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 1.15, 5.65, 6.85, 1.05,
+        [("The model stays a MAGIC BOX today — how it works inside is a field of its own.", 11.5, WHITE, False, False, 1.25),
+         ("Our job as chatbot developers: feed the box well — fast and accurate.", 11.5, MUTED, False, False, None)],
         anchor=MSO_ANCHOR.MIDDLE)
+
+    nxt = card(slide, 8.5, 5.65, 4.15, 1.05, fill=PANEL, line_color=TEAL)
+    txt(slide, 8.75, 5.65, 3.65, 1.05,
+        [("So: send LESS.", 13, TEAL, True, False, 1.25),
+         ("But which part?  →  Phase 3", 12, WHITE, False, False, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    return slide
+
+
+def build_s08_send_less(prs, notes):
+    slide = base_slide(prs, "PHASE 3  ·  SEARCH FIRST", "Send less: pick the right pieces", notes)
+
+    txt(slide, 0.9, 1.85, 11.6, 0.4,
+        [("For any one question, only a few paragraphs of the whole KB matter. Send those.", 13.5, MUTED, False, True, None)])
+
+    flow_row(slide, 0.9, 12.43, 2.45, 1.0, [
+        ("KB\ndocuments", PANEL_LINE),
+        ("split into\nchunks", TEAL),
+        ("pick the top 5\nfor this question", TEAL),
+        ("prompt:\n5 chunks + question", PANEL_LINE),
+        ("model", PANEL_LINE),
+        ("answer", PANEL_LINE),
+    ], size=10.5)
+
+    term_chip(slide, 0.9, 3.9, 7.1, 0.8,
+              "Chunk", "a small passage cut from a document — a few paragraphs, ideally one topic.")
+
+    shrink = card(slide, 8.25, 3.9, 4.2, 0.8, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 8.5, 3.9, 3.7, 0.8, [("200 pages  →  2 pages per question", 12.5, TEAL, True, False, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    skill = card(slide, 0.9, 5.05, 11.55, 1.45, fill=PANEL, line_color=AMBER)
+    txt(slide, 1.2, 5.22, 11.0, 0.4, [("This choosing step is YOUR craft", 14, AMBER, True, False, None)])
+    txt(slide, 1.2, 5.65, 11.0, 0.75,
+        [("How the model answers from text — not our department, we take it as given. Choosing WHAT it reads — that is "
+          "exactly where a chatbot developer shows their skill. Most of what made my real bot better happened right here.",
+          11.5, WHITE, False, False, 1.25)])
+    return slide
+
+
+def build_s09_keyword_search(prs, notes):
+    slide = base_slide(prs, "PHASE 3  ·  SEARCH FIRST", "Finding the pieces — no AI needed", notes)
+
+    q = card(slide, 0.9, 1.9, 7.6, 0.6, fill=PANEL, line_color=TEAL, radius=0.3)
+    txt(slide, 1.2, 1.9, 7.0, 0.6, [("\u201cWhat are the library opening hours?\u201d", 13.5, WHITE, True, True, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    txt(slide, 0.9, 2.7, 5.0, 0.35, [("THE KB, AS ACTUALLY STORED — A TABLE OF CHUNKS", 10, MUTED, True, False, None)])
 
     rows = [
-        ("Passage A", 2.4, "shares 4 words — top result ✓", TEAL, WHITE),
-        ("Passage B", 1.2, "shares 2 words", PANEL_LINE, MUTED),
-        ("Passage C", 0.08, "shares 0 words", PANEL_LINE, MUTED),
+        ("A", "\u201cLibrary opening hours: 8am\u201310pm on term days.\u201d", "library · opening · hours", "3", TEAL, True),
+        ("B", "\u201cEnrolment closes at the census date.\u201d", "—", "0", PANEL_LINE, False),
+        ("C", "\u201cExam Period Appendix: library access 24/7 during exam period.\u201d", "library", "1", PANEL_LINE, False),
     ]
-    for i, (name, bar_w, score_text, line_color, score_color) in enumerate(rows):
-        y = 3.8 + i * 0.75
-        card(slide, 1.1, y, 7.4, 0.6, fill=PANEL, line_color=line_color)
-        txt(slide, 1.35, y, 1.6, 0.6, [(name, 12.5, WHITE, True, False, None)], anchor=MSO_ANCHOR.MIDDLE)
-        bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(3.0), Inches(y + 0.19), Inches(bar_w), Inches(0.22))
-        solid(bar, TEAL if line_color is TEAL else PANEL_LINE)
-        no_line(bar)
-        bar.adjustments[0] = 0.5
-        txt(slide, 5.6, y, 2.8, 0.6, [(score_text, 11.5, score_color, True, False, None)], anchor=MSO_ANCHOR.MIDDLE)
+    for i, (cid, text, shared, score, line_color, winner) in enumerate(rows):
+        y = 3.1 + i * 0.78
+        card(slide, 0.9, y, 8.7, 0.66, fill=PANEL, line_color=line_color)
+        badge = circle(slide, 1.32, y + 0.33, 0.4, fill=TEAL if winner else PANEL_LINE)
+        centered_label(badge, cid, 12, BG if winner else MUTED)
+        txt(slide, 1.65, y, 4.55, 0.66, [(text, 10.5, WHITE, False, False, 1.1)], anchor=MSO_ANCHOR.MIDDLE)
+        txt(slide, 6.3, y, 1.95, 0.66, [(shared, 9.5, MUTED, False, True, 1.1)], anchor=MSO_ANCHOR.MIDDLE)
+        txt(slide, 8.35, y, 1.1, 0.66, [(("score " + score + (" \u2713" if winner else "")), 11,
+                                          TEAL if winner else MUTED, True, False, None)], anchor=MSO_ANCHOR.MIDDLE)
 
-    txt(slide, 9.0, 3.4, 3.65, 2.6, [
-        ("Decades-old search:", 13.5, TEAL, True, False, 1.3),
-        ("fast, simple, no AI needed.", 12.5, WHITE, False, False, 1.35),
-        ("Rare words count extra;", 12.5, WHITE, False, False, 1.35),
-        ("best overlap wins.", 12.5, WHITE, False, False, None),
+    side = card(slide, 9.85, 1.9, 2.85, 3.0, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 10.1, 1.9, 2.35, 3.0, [
+        ("Count shared words.", 12, WHITE, True, False, 1.4),
+        ("Rare words weigh extra.", 12, WHITE, False, False, 1.4),
+        ("Highest score wins.", 12, WHITE, False, False, 1.55),
+        ("How search engines worked for decades.", 11, MUTED, False, True, 1.35),
+        ("No AI anywhere.", 12.5, TEAL, True, False, None),
+    ], anchor=MSO_ANCHOR.MIDDLE)
+
+    term_chip(slide, 0.9, 5.55, 8.7, 0.75,
+              "Keyword search (BM25)", "score each chunk by word overlap with the question, rare words counting extra.")
+
+    txt(slide, 0.9, 6.5, 11.6, 0.4,
+        [("Wire this in — and the bot suddenly works surprisingly well. Fast, cheap… and usually right.", 13, TEAL, False, True, None)])
+    return slide
+
+
+def build_s10_bug1(prs, notes):
+    slide = base_slide(prs, "PHASE 3  ·  IT BREAKS", "Right words, wrong rule", notes)
+    failure_chip(slide, "\u2717 confidently wrong", w=2.9)
+
+    q = card(slide, 4.1, 1.85, 8.35, 0.52, fill=PANEL, line_color=TEAL, radius=0.3)
+    txt(slide, 4.4, 1.85, 7.85, 0.52,
+        [("Week 3 of term. Student asks: \u201cCan I access the library 24/7?\u201d", 12.5, WHITE, True, True, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    card(slide, 0.9, 2.7, 5.65, 2.0, fill=PANEL, line_color=WRONG)
+    txt(slide, 1.15, 2.85, 5.15, 0.4, [("Exam Period Appendix", 13, WRONG, True, False, None)])
+    txt(slide, 1.15, 3.3, 5.15, 0.6, [("\u201c…library access 24/7 during the exam period…\u201d", 12, WHITE, False, True, 1.2)])
+    txt(slide, 1.15, 4.1, 5.15, 0.45, [("shares: library · access · 24/7  →  score 3  →  wins \u2717", 11, WRONG, True, False, None)])
+
+    card(slide, 6.8, 2.7, 5.65, 2.0, fill=PANEL, line_color=TEAL)
+    txt(slide, 7.05, 2.85, 5.15, 0.4, [("General rule — governs this week", 13, TEAL, True, False, None)])
+    txt(slide, 7.05, 3.3, 5.15, 0.6, [("\u201cLibrary opening hours: 8am\u201310pm on term days.\u201d", 12, WHITE, False, True, 1.2)])
+    txt(slide, 7.05, 4.1, 5.15, 0.45, [("shares: library  →  score 1  →  left behind", 11, MUTED, True, False, None)])
+
+    bot = card(slide, 0.9, 5.0, 5.65, 0.85, fill=PANEL, line_color=WRONG)
+    txt(slide, 1.15, 5.0, 5.15, 0.85,
+        [("MetMate: \u201cYes — the library is open 24/7.\u201d", 12.5, WHITE, True, False, 1.25),
+         ("Confident. Wrong. Every word from a real document.", 10.5, WRONG, False, True, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    quiet = card(slide, 6.8, 5.0, 5.65, 0.85, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 7.05, 5.0, 5.15, 0.85,
+        [("The quieter failure: \u201cenrolment\u201d scores ZERO against a chunk", 11, WHITE, False, False, 1.25),
+         ("that says \u201cregistration\u201d. Synonyms are invisible.", 11, WHITE, False, False, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    txt(slide, 0.9, 6.2, 11.6, 0.6,
+        [("Matching exact words has a name: LEXICAL matching. What we actually need: match the MEANING —", 13, AMBER, False, True, 1.3),
+         ("SEMANTIC matching. That is Phase 4.", 13, AMBER, False, True, None)])
+    return slide
+
+
+def build_s11_math_with_words(prs, notes):
+    slide = base_slide(prs, "PHASE 4  ·  SEARCH BY MEANING", "Math with words", notes)
+
+    txt(slide, 0.9, 1.85, 11.6, 0.4,
+        [("Give every word a number — then \u201chow similar?\u201d becomes \u201chow close?\u201d, plain subtraction.",
+          13.5, MUTED, False, True, None)])
+
+    panel = card(slide, 0.9, 2.45, 8.0, 2.9, fill=PANEL, line_color=PANEL_LINE)
+    axis_y = 4.15
+    def line_x(value):
+        return 4.9 + value * 0.5
+    straight_line(slide, 1.4, axis_y, 8.5, axis_y, MUTED, 1.5)
+    for value in (-5, 0, 5, 6):
+        x = line_x(value)
+        straight_line(slide, x, axis_y - 0.07, x, axis_y + 0.07, MUTED, 1.5)
+        txt(slide, x - 0.4, axis_y + 0.14, 0.8, 0.3, [(str(value), 10, MUTED, False, False, None)],
+            align=PP_ALIGN.CENTER)
+
+    circle(slide, line_x(-5), axis_y, 0.18, fill=WRONG)
+    txt(slide, line_x(-5) - 1.0, axis_y - 0.55, 2.0, 0.35, [("withdrawal", 12, WRONG, True, False, None)],
+        align=PP_ALIGN.CENTER)
+    circle(slide, line_x(5), axis_y, 0.18, fill=TEAL)
+    txt(slide, line_x(5) - 1.0, axis_y - 0.55, 2.0, 0.35, [("enrolment", 12, TEAL, True, False, None)],
+        align=PP_ALIGN.CENTER)
+    circle(slide, line_x(6), axis_y, 0.18, fill=TEAL)
+    txt(slide, line_x(6) - 1.0, axis_y + 0.5, 2.0, 0.35, [("registration", 12, TEAL, True, False, None)],
+        align=PP_ALIGN.CENTER)
+
+    txt(slide, line_x(5) - 1.1, 2.75, 2.9, 0.35, [("1 apart — similar \u2713", 11, TEAL, False, True, None)])
+    txt(slide, line_x(-2.5) - 1.5, 4.85, 3.0, 0.35, [("10 apart — opposite", 11, MUTED, False, True, None)],
+        align=PP_ALIGN.CENTER)
+
+    term_chip(slide, 9.2, 2.45, 3.5, 1.3, "Embedding",
+              "writing words as numbers so that close numbers = similar meaning.", def_size=10.5)
+
+    take = card(slide, 9.2, 3.95, 3.5, 1.4, fill=PANEL, line_color=AMBER)
+    txt(slide, 9.45, 3.95, 3.0, 1.4,
+        [("Take ONE thing home today: this concept.", 12, AMBER, True, False, 1.3),
+         ("It unlocks half of the LLM world.", 11, WHITE, False, False, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    hook = card(slide, 0.9, 5.65, 11.8, 0.95, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 1.2, 5.65, 11.2, 0.95,
+        [("But where does \u201cpass\u201d go on this line? Not similar to enrolment, not opposite either…", 13, WHITE, False, True, 1.25),
+         ("one number per word is not enough.", 13, WHITE, False, True, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    return slide
+
+
+def build_s12_vectors(prs, notes):
+    slide = base_slide(prs, "PHASE 4  ·  SEARCH BY MEANING", "One number isn't enough — vectors", notes)
+
+    panel = card(slide, 0.9, 1.95, 6.3, 4.55, fill=PANEL, line_color=PANEL_LINE)
+    cx, cy = 3.75, 4.25
+    sx, sy = 0.42, 0.38
+
+    def px(value):
+        return cx + value * sx
+
+    def py(value):
+        return cy - value * sy
+
+    straight_line(slide, px(-5.6), cy, px(6.6), cy, MUTED, 1.25)
+    straight_line(slide, cx, py(5.6), cx, py(-5.6), MUTED, 1.25)
+    txt(slide, 1.15, 2.15, 2.45, 0.75, [
+        ("x: withdrawal \u2194 enrolment", 10, MUTED, False, True, 1.4),
+        ("y: fail \u2194 pass", 10, MUTED, False, True, None),
     ])
 
-    txt(slide, 1.1, 6.2, 11.2, 0.5,
-        [("The winning passages go to the language model to phrase a reply — that's the whole phase-1 bot.", 12.5, MUTED, False, True, None)])
-    return slide
+    points = [
+        ("enrolment [5, 0]", 5, 0, TEAL, -1.55, -0.42),
+        ("registration [6, 0]", 6, 0, TEAL, -0.6, 0.26),
+        ("withdrawal [\u22125, 0]", -5, 0, TEAL, -0.85, -0.42),
+        ("pass [0, 5]", 0, 5, AMBER, 0.14, -0.1),
+        ("fail [0, \u22125]", 0, -5, AMBER, 0.14, -0.12),
+    ]
+    for label, vx, vy, color, dx, dy in points:
+        circle(slide, px(vx), py(vy), 0.16, fill=color)
+        txt(slide, px(vx) + dx, py(vy) + dy, 2.1, 0.3, [(label, 10.5, color, True, False, None)])
 
+    course_ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(px(2.5) - 0.17), Inches(py(2.5) - 0.17),
+                                         Inches(0.34), Inches(0.34))
+    course_ring.fill.background()
+    outline(course_ring, AMBER, 2.0)
+    circle(slide, px(2.5), py(2.5), 0.16, fill=WHITE)
+    txt(slide, px(2.5) + 0.2, py(2.5) - 0.35, 2.2, 0.3, [("course [2.5, 2.5]", 11.5, WHITE, True, False, None)])
 
-def build_s06_phase1_breaks(prs, notes):
-    slide = base_slide(prs, "PHASE 1 — IT BREAKS", "Phase 1 breaks: right words, wrong rule", notes,
-                       mini_map_active=["Search"])
-    failure_chip(slide, "✗ high score, wrong rule", x=1.1, y=1.98, w=3.3)
+    term_chip(slide, 7.5, 1.95, 4.95, 0.9, "Vector",
+              "a list of numbers. Here: [enrolment-ness, pass-ness].")
+    term_chip(slide, 7.5, 3.0, 4.95, 0.9, "Dimension",
+              "one slot in that list. A 3-number vector = 3-dimensional.")
 
-    qbubble = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.1), Inches(2.72), Inches(11.1), Inches(0.7))
-    solid(qbubble, PANEL)
-    outline(qbubble, TEAL, 1.25)
-    qbubble.adjustments[0] = 0.3
-    txt(slide, 1.4, 2.72, 10.5, 0.7, [("Student asks: “Can I access the library 24/7?”", 15, WHITE, True, True, None)],
+    reuse = card(slide, 7.5, 4.05, 4.95, 1.3, fill=PANEL, line_color=AMBER)
+    txt(slide, 7.75, 4.05, 4.45, 1.3,
+        [("\u201ccourse\u201d needs NO new axis: [2.5, 2.5] — a bit of both.", 12, WHITE, True, False, 1.3),
+         ("A few hundred dimensions can place ALL the words.", 11.5, MUTED, False, False, None)],
         anchor=MSO_ANCHOR.MIDDLE)
 
-    card(slide, 1.6, 3.75, 5.0, 2.35, fill=PANEL, line_color=WRONG)
-    txt(slide, 1.9, 3.95, 4.4, 0.4, [("Exam Period Appendix", 13, WRONG, True, False, None)])
-    txt(slide, 1.9, 4.4, 4.4, 0.9, [("“library access is 24/7 during exam period”", 12.5, WHITE, False, True, 1.2)])
-    txt(slide, 1.9, 5.35, 4.4, 0.5, [("shares 3 words → top result ✗", 11.5, WRONG, True, False, None)])
-
-    card(slide, 6.9, 3.75, 5.0, 2.35, fill=PANEL, line_color=TEAL)
-    txt(slide, 7.2, 3.95, 4.4, 0.4, [("General Library Hours", 13, TEAL, True, False, None)])
-    txt(slide, 7.2, 4.4, 4.4, 0.9, [("“open 8am–10pm, term time” — the rule that", 12.5, WHITE, False, False, 1.2),
-                                     ("actually governs an ordinary week", 12.5, WHITE, False, False, None)])
-    txt(slide, 7.2, 5.35, 4.4, 0.5, [("shares 1 word → ranked low", 11.5, MUTED, True, False, None)])
-
-    txt(slide, 1.6, 6.3, 10.3, 0.5,
-        [("Every word came from a real document — and the answer is still wrong. Phase 1 is dead.", 13, WHITE, False, False, None)])
-    return slide
-
-
-def build_s07_phase2_meaning(prs, notes):
-    slide = base_slide(prs, "PHASE 2 — THE FIX", "Phase 2 — search by meaning", notes,
-                       mini_map_active=["Index", "Search"])
-
-    txt(slide, 1.1, 2.35, 6.5, 0.5, [("Text → a point in \"meaning space\"", 15, MUTED, False, True, None)])
-
-    card(slide, 1.1, 2.95, 6.6, 3.3, fill=PANEL, line_color=PANEL_LINE)
-
-    pts = {
-        "queen": (2.6, 3.7),
-        "female": (3.5, 5.2),
-        "king": (5.9, 3.55),
-        "male": (6.7, 4.95),
-    }
-    for name, (x, y) in pts.items():
-        circle(slide, x, y, 0.16, fill=AMBER if name in ("king", "queen") else TEAL)
-        txt(slide, x - 0.7, y + 0.26, 1.6, 0.35, [(name, 12.5, WHITE, True, False, None)], align=PP_ALIGN.CENTER)
-
-    straight_line(slide, pts["queen"][0], pts["queen"][1], pts["female"][0], pts["female"][1], MUTED, 2.25)
-    straight_line(slide, pts["male"][0], pts["male"][1], pts["king"][0], pts["king"][1], MUTED, 2.25)
-
-    txt(slide, 8.05, 3.0, 4.55, 3.3, [
-        ("queen − female + male ≈ king", 20, WHITE, True, False, 1.35),
-        ("Similar meaning → nearby points,", 13.5, MUTED, False, False, 1.4),
-        ("even with zero shared words.", 13.5, MUTED, False, False, 1.35),
-        ("Every passage becomes a point;", 13.5, MUTED, False, False, 1.4),
-        ("the question becomes a point;", 13.5, MUTED, False, False, 1.35),
-        ("search = find the nearby points.", 13.5, MUTED, False, False, 1.5),
-        ("That's half the fix.", 13, AMBER, False, True, None),
-    ])
-    return slide
-
-
-def build_s08_phase2_scope(prs, notes):
-    slide = base_slide(prs, "PHASE 2 — THE FIX", "Phase 2 — say when each rule applies", notes,
-                       mini_map_active=["Index"])
-
-    txt(slide, 1.1, 2.3, 11.0, 0.45,
-        [("Meaning search still finds the exam-period passage — it IS about library access. So store every rule with its scope.", 13.5, MUTED, False, True, None)])
-
-    tag1 = card(slide, 1.1, 3.0, 1.95, 0.42, fill=AMBER, line_color=AMBER, radius=0.5)
-    centered_label(tag1, "EXAM PERIOD ONLY", 9.5, BG)
-    card(slide, 1.1, 3.42, 5.6, 0.95, fill=PANEL, line_color=PANEL_LINE)
-    txt(slide, 1.35, 3.42, 5.1, 0.95, [("“library access is 24/7 during exam period”", 12.5, WHITE, False, True, None)],
+    real = card(slide, 7.5, 5.5, 4.95, 1.0, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 7.75, 5.5, 4.45, 1.0,
+        [("Production embeddings: ~300–3,000 dimensions.", 11.5, WHITE, False, False, 1.3),
+         ("Same idea — just more room.", 11, MUTED, False, True, None)],
         anchor=MSO_ANCHOR.MIDDLE)
 
-    tag2 = card(slide, 1.1, 4.75, 1.4, 0.42, fill=AMBER, line_color=AMBER, radius=0.5)
-    centered_label(tag2, "TERM TIME", 9.5, BG)
-    card(slide, 1.1, 5.17, 5.6, 0.95, fill=PANEL, line_color=PANEL_LINE)
-    txt(slide, 1.35, 5.17, 5.1, 0.95, [("“open 8am–10pm, term time”", 12.5, WHITE, False, True, None)],
-        anchor=MSO_ANCHOR.MIDDLE)
-
-    arrow_right(slide, 7.0, 4.55, 0.9, fill=TEAL)
-
-    card(slide, 8.1, 3.6, 4.55, 1.95, fill=PANEL, line_color=TEAL)
-    txt(slide, 8.35, 3.8, 4.05, 0.4, [("MetMate now answers:", 13, TEAL, True, False, None)])
-    txt(slide, 8.35, 4.25, 4.05, 1.2, [("“8am–10pm in term time;", 13.5, WHITE, False, False, 1.3),
-                                        ("24/7 only during exam period.” ✓", 13.5, WHITE, False, False, None)])
-
-    txt(slide, 1.1, 6.25, 11.4, 0.5,
-        [("A rule that carries its own scope can be set aside when its conditions don't hold. Phase 2 answers correctly.", 12.5, MUTED, False, True, None)])
-    return slide
-
-
-def build_s09_phase3_breaks(prs, notes):
-    slide = base_slide(prs, "PHASE 3 — IT BREAKS", "Phase 3 — it refuses what it knows", notes,
-                       mini_map_active=["Check"])
-    failure_chip(slide, "✗ threw away a correct answer", x=1.1, y=1.98, w=3.7)
-
-    qbubble = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.1), Inches(2.72), Inches(11.1), Inches(0.7))
-    solid(qbubble, PANEL)
-    outline(qbubble, TEAL, 1.25)
-    qbubble.adjustments[0] = 0.3
-    txt(slide, 1.4, 2.72, 10.5, 0.7, [("Student asks: “How many kinds of special consideration are there?”", 15, WHITE, True, True, None)],
-        anchor=MSO_ANCHOR.MIDDLE)
-
-    card(slide, 1.6, 3.7, 5.0, 2.5, fill=PANEL, line_color=TEAL)
-    txt(slide, 1.9, 3.85, 4.4, 0.4, [("Master list (built from the documents)", 12.5, TEAL, True, False, None)])
-    for i, item in enumerate(["Medical", "Bereavement", "Carer", "Equipment fault", "Misadventure", "Religious"]):
-        y = 4.28 + i * 0.31
-        txt(slide, 1.9, y, 4.2, 0.3, [(f"✓ {item}", 11.5, WHITE, False, False, None)])
-
-    card(slide, 6.9, 3.7, 5.0, 2.5, fill=PANEL, line_color=WRONG)
-    txt(slide, 7.2, 3.85, 4.4, 0.4, [("Passages the search pulled this turn", 12.5, WRONG, True, False, None)])
-    for i, item in enumerate(["Medical", "Bereavement"]):
-        y = 4.28 + i * 0.31
-        txt(slide, 7.2, y, 4.2, 0.3, [(f"✓ {item}", 11.5, WHITE, False, False, None)])
-    for i, item in enumerate(["Carer", "Equipment fault", "Misadventure", "Religious"]):
-        y = 4.28 + (i + 2) * 0.31
-        txt(slide, 7.2, y, 4.2, 0.3, [(f"✗ {item} — “unsupported”", 11.5, MUTED, False, True, None)])
-
-    txt(slide, 1.6, 6.35, 10.3, 0.5,
-        [("The checker kills the whole answer: “I couldn't confidently find this.” Too shy is a failure too.", 13, WHITE, False, False, None)])
-    return slide
-
-
-def build_s10_phase3_fix(prs, notes):
-    slide = base_slide(prs, "PHASE 3 — THE FIX", "Phase 3 — the right evidence per claim", notes,
-                       mini_map_active=["Check"])
-
-    card(slide, 1.1, 2.45, 5.6, 1.5, fill=PANEL, line_color=TEAL)
-    txt(slide, 1.35, 2.62, 5.1, 0.4, [("What exists / how many", 14, TEAL, True, False, None)])
-    txt(slide, 1.35, 3.05, 5.1, 0.8, [("Trust the master list — it was built", 12.5, WHITE, False, False, 1.25),
-                                       ("directly from the documents.", 12.5, WHITE, False, False, None)])
-
-    card(slide, 7.0, 2.45, 5.6, 1.5, fill=PANEL, line_color=AMBER)
-    txt(slide, 7.25, 2.62, 5.1, 0.4, [("Details of one specific rule", 14, AMBER, True, False, None)])
-    txt(slide, 7.25, 3.05, 5.1, 0.8, [("Require the actual passage.", 12.5, WHITE, False, False, 1.25),
-                                       ("No passage, no claim.", 12.5, WHITE, False, False, None)])
-
-    txt(slide, 1.1, 4.25, 11.0, 0.4, [("And when a claim truly has neither:", 13, MUTED, False, True, None)])
-
-    flow = [
-        ("Claim still unsupported", PANEL_LINE),
-        ("Search once more, sharper", PANEL_LINE),
-        ("Answer — or an honest “I don't know”", TEAL),
-    ]
-    fx = [1.1, 5.05, 9.0]
-    fw = [3.5, 3.5, 3.65]
-    fy = 4.75
-    fh2 = 0.85
-    for i, (label, line_color) in enumerate(flow):
-        card(slide, fx[i], fy, fw[i], fh2, fill=PANEL, line_color=line_color)
-        txt(slide, fx[i] + 0.15, fy, fw[i] - 0.3, fh2, [(label, 12, WHITE, True, False, 1.15)],
-            align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-        if i < 2:
-            arrow_right(slide, fx[i] + fw[i] + 0.05, fy + fh2 / 2, 0.35, h=0.22, fill=TEAL)
-
-    txt(slide, 1.1, 6.1, 11.4, 0.6,
-        [("Never show an unchecked answer. Never refuse what you can prove. When you truly can't — say so.", 13.5, WHITE, True, False, None)])
-    return slide
-
-
-def build_s11_full_architecture(prs, notes):
-    slide = base_slide(prs, "ALL TOGETHER", "The whole system — built by its failures", notes)
-
-    left = 0.7
-    right = SLIDE_W - 0.7
-
-    prep = [
-        ("Documents", MUTED),
-        ("Split into passages", MUTED),
-        ("Label: when it applies", TEAL),
-        ("Meaning index", TEAL),
-        ("Master list of rules", AMBER),
-    ]
-    n1 = len(prep)
-    gap1 = 0.22
-    w1 = (right - left - gap1 * (n1 - 1)) / n1
-    y1 = 2.25
-    h1 = 0.85
-    txt(slide, left, y1 - 0.36, 8.0, 0.3, [("BUILT ONCE", 10.5, MUTED, True, False, None)])
-    for i, (label, phase_color) in enumerate(prep):
-        x = left + i * (w1 + gap1)
-        card(slide, x, y1, w1, h1, fill=PANEL, line_color=phase_color)
-        txt(slide, x + 0.08, y1, w1 - 0.16, h1, [(label, 11, WHITE, True, False, 1.1)],
-            align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-        if i < n1 - 1:
-            arrow_right(slide, x + w1 - 0.02, y1 + h1 / 2, gap1 + 0.04, h=0.16, fill=PANEL_LINE)
-
-    live = [
-        ("Student question", MUTED),
-        ("Search by meaning", TEAL),
-        ("Keep rules that apply now", TEAL),
-        ("Draft answer", MUTED),
-        ("Check every claim", AMBER),
-        ("Weak? search again", AMBER),
-        ("Reply — or “I don't know”", AMBER),
-    ]
-    n2 = len(live)
-    gap2 = 0.18
-    w2 = (right - left - gap2 * (n2 - 1)) / n2
-    y2 = 4.3
-    h2 = 1.0
-    txt(slide, left, y2 - 0.36, 8.0, 0.3, [("EVERY QUESTION, LIVE", 10.5, MUTED, True, False, None)])
-    for i, (label, phase_color) in enumerate(live):
-        x = left + i * (w2 + gap2)
-        card(slide, x, y2, w2, h2, fill=PANEL, line_color=phase_color)
-        txt(slide, x + 0.07, y2, w2 - 0.14, h2, [(label, 10.5, WHITE, True, False, 1.1)],
-            align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
-        if i < n2 - 1:
-            arrow_right(slide, x + w2 - 0.02, y2 + h2 / 2, gap2 + 0.04, h=0.16, fill=PANEL_LINE)
-
-    index_cx = left + 3 * (w1 + gap1) + w1 / 2
-    search_cx = left + 1 * (w2 + gap2) + w2 / 2
-    master_cx = left + 4 * (w1 + gap1) + w1 / 2
-    check_cx = left + 4 * (w2 + gap2) + w2 / 2
-    straight_line(slide, index_cx, y1 + h1, search_cx, y2, MUTED, 1.25)
-    straight_line(slide, master_cx, y1 + h1, check_cx, y2, MUTED, 1.25)
-
-    legend = [
-        ("Phase 1 — the bare skeleton", MUTED),
-        ("Phase 2 — meaning + applicability", TEAL),
-        ("Phase 3 — verification + honesty", AMBER),
-    ]
-    lx = left
-    ly = 5.65
-    for label, color in legend:
-        dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(lx), Inches(ly + 0.07), Inches(0.16), Inches(0.16))
-        solid(dot, color)
-        no_line(dot)
-        txt(slide, lx + 0.26, ly, 3.9, 0.35, [(label, 11.5, WHITE, False, False, None)])
-        lx += 4.2
-
-    txt(slide, left, 6.25, right - left, 0.5,
-        [("Nothing here was designed up front — every coloured box exists because a failure forced it.", 13, AMBER, False, True, None)],
+    txt(slide, 0.9, 6.6, 6.3, 0.35,
+        [("similar meaning = nearby points — distance IS similarity", 11.5, TEAL, False, True, None)],
         align=PP_ALIGN.CENTER)
     return slide
 
 
-def build_s12_skipped(prs, notes):
-    slide = base_slide(prs, "SKIPPED ON PURPOSE", "What we skipped (look these up later)", notes)
+def build_s13_learned_numbers(prs, notes):
+    slide = base_slide(prs, "PHASE 4  ·  SEARCH BY MEANING", "Who assigns the numbers?", notes)
 
-    txt(slide, 1.1, 2.2, 11.2, 0.45,
-        [("Six things the real system also does. None changes today's story — they squeeze out the last 20%.", 13.5, MUTED, False, True, None)])
+    txt(slide, 0.9, 1.85, 11.6, 0.4,
+        [("Typing numbers for every word by hand would take forever. They are LEARNED.", 13.5, MUTED, False, True, None)])
+
+    cloze = card(slide, 0.9, 2.5, 6.6, 1.15, fill=PANEL, line_color=TEAL)
+    txt(slide, 1.2, 2.65, 6.0, 0.5, [("\u201cStudents must  ______  before the census date.\u201d", 15, WHITE, True, False, None)])
+    txt(slide, 1.2, 3.2, 6.0, 0.35, [("hide a word from a real sentence — make the computer guess it", 10.5, MUTED, False, True, None)])
+
+    guesses = card(slide, 0.9, 3.95, 6.6, 2.0, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 1.2, 4.1, 6.0, 0.35, [("the computer's guesses:", 11, MUTED, True, False, None)])
+    bars = [
+        ("enrol", 2.9, "62%", TEAL),
+        ("register", 1.45, "31%", TEAL),
+        ("party", 0.08, "0.1%", PANEL_LINE),
+    ]
+    for i, (word, bar_w, pct, color) in enumerate(bars):
+        y = 4.55 + i * 0.45
+        txt(slide, 1.2, y, 1.3, 0.35, [(word, 12, WHITE, True, False, None)])
+        bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(2.6), Inches(y + 0.06), Inches(bar_w), Inches(0.22))
+        solid(bar, color)
+        no_line(bar)
+        bar.adjustments[0] = 0.5
+        txt(slide, 2.7 + bar_w, y, 0.9, 0.35, [(pct, 10.5, MUTED, False, False, None)])
+
+    side = card(slide, 7.9, 2.5, 4.55, 3.45, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 8.2, 2.72, 4.0, 3.1, [
+        ("No answer sheet needed —", 12.5, TEAL, True, False, 1.3),
+        ("the hidden word IS the answer.", 12.5, TEAL, True, False, 1.5),
+        ("Words that fit the same gaps (enrol, register) get pushed to nearby numbers.", 12, WHITE, False, False, 1.3),
+        ("Words that never fit drift away.", 12, WHITE, False, False, 1.5),
+        ("Millions of sentences later, the numbers have assigned themselves.", 12, MUTED, False, False, 1.3),
+    ])
+
+    term_chip(slide, 0.9, 6.15, 11.55, 0.75,
+              "Representation learning",
+              "the numbers are learned from data, not designed by hand. Look up later: king \u2212 man + woman \u2248 queen.")
+    return slide
+
+
+def build_s14_meaning_search(prs, notes):
+    slide = base_slide(prs, "PHASE 4  ·  SEARCH BY MEANING", "MetMate searches by meaning", notes)
+
+    table = card(slide, 0.9, 1.9, 6.45, 2.6, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 1.15, 2.05, 6.0, 0.35, [("THE STORED KB — every chunk now carries its vector", 10, MUTED, True, False, None)])
+    kb_rows = [
+        ("\u201cEnrolment corrections must be lodged before census.\u201d", "[ 5.2,  0.1, …]", TEAL),
+        ("\u201cLibrary opening hours: 8am\u201310pm on term days.\u201d", "[\u22120.2,  4.7, …]", MUTED),
+        ("\u201cWithdrawal without penalty: apply before week 4.\u201d", "[\u22124.8,  0.3, …]", MUTED),
+    ]
+    for i, (chunk_text, vector_text, color) in enumerate(kb_rows):
+        y = 2.5 + i * 0.62
+        txt(slide, 1.15, y, 4.1, 0.6, [(chunk_text, 10, WHITE, False, False, 1.1)], anchor=MSO_ANCHOR.MIDDLE)
+        txt(slide, 5.35, y, 1.85, 0.6, [(vector_text, 10.5, color, True, False, None)],
+            anchor=MSO_ANCHOR.MIDDLE, font=MONO)
+
+    term_chip(slide, 7.6, 1.9, 4.85, 0.95, "Similarity",
+              "the closeness of two vectors. Official name: cosine similarity.")
+
+    trap = card(slide, 7.6, 3.0, 4.85, 1.5, fill=PANEL, line_color=PANEL_LINE)
+    txt(slide, 7.85, 3.0, 4.35, 1.5,
+        [("And the library trap? A \u201c24/7\u201d question now retrieves BOTH library chunks — rule and appendix "
+          "are both ABOUT library access. The model sees the full picture and answers with the condition. \u2713",
+          10.5, WHITE, False, False, 1.25)], anchor=MSO_ANCHOR.MIDDLE)
+
+    qb = card(slide, 0.9, 4.85, 4.5, 0.8, fill=PANEL, line_color=TEAL, radius=0.3)
+    txt(slide, 1.15, 4.85, 4.0, 0.8, [("\u201cHow do I fix a mistake in my registration?\u201d", 11.5, WHITE, True, True, 1.2)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    arrow_right(slide, 5.5, 5.25, 0.45, fill=TEAL)
+    vec = card(slide, 6.05, 4.85, 1.85, 0.8, fill=PANEL, line_color=AMBER)
+    txt(slide, 6.2, 4.85, 1.55, 0.8, [("[ 5.6,  0.2, …]", 11, AMBER, True, False, None)],
+        align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE, font=MONO)
+    arrow_right(slide, 8.0, 5.25, 0.45, fill=TEAL)
+    win = card(slide, 8.55, 4.75, 3.9, 1.0, fill=PANEL, line_color=TEAL)
+    txt(slide, 8.8, 4.75, 3.4, 1.0,
+        [("nearest chunk: \u201cEnrolment corrections…\u201d", 11, WHITE, True, False, 1.2),
+         ("ZERO shared words — found by meaning \u2713", 10.5, TEAL, True, False, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+
+    txt(slide, 0.9, 6.15, 11.6, 0.45,
+        [("Same skeleton — one box upgraded. The bot just learned MEANING.", 14, AMBER, True, False, None)])
+    txt(slide, 0.9, 6.6, 11.6, 0.35,
+        [("Search with \u201cregistration\u201d — texts about \u201cenrolment\u201d now come to you.", 11.5, MUTED, False, True, None)])
+    return slide
+
+
+def build_s15_rag(prs, notes):
+    slide = base_slide(prs, "ALL TOGETHER", "The whole picture — you built RAG", notes)
+
+    left = 0.9
+    right = 12.43
+
+    txt(slide, left, 1.82, 6.0, 0.32, [("BUILT ONCE — BEFORE ANY QUESTION", 10, MUTED, True, False, None)])
+    legend_items = [("phase 2", PANEL_LINE), ("phase 3", TEAL), ("phase 4", AMBER)]
+    lx = 8.6
+    for label, color in legend_items:
+        swatch = card(slide, lx, 1.84, 0.34, 0.2, fill=PANEL, line_color=color, radius=0.25)
+        txt(slide, lx + 0.42, 1.78, 0.95, 0.3, [(label, 10, MUTED, False, False, None)])
+        lx += 1.45
+
+    top_positions = flow_row(slide, left, right, 2.2, 0.8, [
+        ("Documents (KB)", PANEL_LINE),
+        ("Split into chunks", TEAL),
+        ("Chunk \u2192 vector", AMBER),
+        ("Store: chunk + vector", AMBER),
+    ], size=11, arrow_color=PANEL_LINE)
+
+    txt(slide, left, 3.28, 6.0, 0.32, [("EVERY QUESTION, LIVE", 10, MUTED, True, False, None)])
+    bottom_positions = flow_row(slide, left, right, 3.62, 0.95, [
+        ("Question", PANEL_LINE),
+        ("Question \u2192 vector", AMBER),
+        ("Find nearest chunks", TEAL),
+        ("Build prompt:\nchunks + question", PANEL_LINE),
+        ("Model writes", PANEL_LINE),
+        ("Answer", PANEL_LINE),
+    ], size=10, arrow_color=PANEL_LINE)
+
+    store_x, store_w = top_positions[3]
+    near_x, near_w = bottom_positions[2]
+    straight_line(slide, store_x + store_w / 2, 3.0, near_x + near_w / 2, 3.62, MUTED, 1.25)
+
+    model_x, model_w = bottom_positions[4]
+    ai_badge = card(slide, model_x + model_w / 2 - 0.75, 4.62, 1.5, 0.32, fill=AMBER, line_color=AMBER, radius=0.5)
+    centered_label(ai_badge, "the only AI box", 8.5, BG)
+
+    def bracket(x1, x2, label):
+        y = 5.15
+        straight_line(slide, x1, y, x2, y, AMBER, 1.75)
+        straight_line(slide, x1, y - 0.07, x1, y + 0.07, AMBER, 1.75)
+        straight_line(slide, x2, y - 0.07, x2, y + 0.07, AMBER, 1.75)
+        txt(slide, x1, y + 0.05, x2 - x1, 0.32, [(label, 10.5, AMBER, True, False, None)], align=PP_ALIGN.CENTER)
+
+    qv_x, qv_w = bottom_positions[1]
+    prompt_x, prompt_w = bottom_positions[3]
+    answer_x, answer_w = bottom_positions[5]
+    bracket(qv_x, near_x + near_w, "RETRIEVAL — find it")
+    bracket(prompt_x, prompt_x + prompt_w, "AUGMENTED — add it")
+    bracket(model_x, model_x + model_w, "GENERATION — write it")
+
+    reveal = card(slide, 0.9, 5.75, 11.55, 0.9, fill=PANEL, line_color=TEAL)
+    txt(slide, 1.2, 5.75, 11.0, 0.9,
+        [("This recipe has a name: RAG — Retrieval-Augmented Generation.", 15, WHITE, True, False, 1.3),
+         ("You didn't memorise it. You built it, failure by failure.", 12, TEAL, False, True, None)],
+        anchor=MSO_ANCHOR.MIDDLE)
+    return slide
+
+
+def build_s16_real_world(prs, notes):
+    slide = base_slide(prs, "PHASE 5  ·  TOWARD THE REAL WORLD", "What real chatbots add", notes)
+
+    txt(slide, 0.9, 1.85, 11.6, 0.45,
+        [("Between today's bot and a production bot: refinements, not new ideas. One line each — look them up when you need them.",
+          12.5, MUTED, False, True, None)])
 
     concepts = [
-        ("Hybrid retrieval", "run word search and meaning search together, merge the results"),
-        ("Reranking", "a second, smarter pass re-orders the found passages"),
-        ("Query rewriting", "clean the question into a sharp search query first"),
-        ("Question splitting", "one compound question becomes several simple ones"),
-        ("Conversation memory", "condense the chat so far into one standalone question"),
-        ("Two-model design", "a cheap fast model does the plumbing; the strong one writes the answer"),
+        ("Hierarchical chunking", "store small chunks AND whole sections — detail questions and overview questions both work"),
+        ("Context-aware chunking", "cut at natural boundaries — headings, clauses — not blindly every N words"),
+        ("Hybrid search", "keyword + meaning search together; each catches what the other misses"),
+        ("Reranking", "a second, more careful pass re-orders the top chunks before the prompt"),
+        ("Conversation memory", "\u201cwhat about postgrads?\u201d only works with the chat so far — rewrite it into a full question"),
+        ("Verification", "check every claim against the sources before showing it — if support is missing, say \u201cI don't know\u201d"),
     ]
     left = 0.9
-    right = SLIDE_W - 0.9
     cols = 3
-    gap = 0.22
-    w = (right - left - gap * (cols - 1)) / cols
-    h = 1.35
+    gap = 0.25
+    w = (SLIDE_W - 0.9 - left - gap * (cols - 1)) / cols
+    h = 1.5
     for i, (term, gloss) in enumerate(concepts):
         row = i // cols
         col = i % cols
         x = left + col * (w + gap)
-        y = 2.85 + row * (h + 0.25)
+        y = 2.55 + row * (h + 0.3)
         card(slide, x, y, w, h, fill=PANEL, line_color=PANEL_LINE)
-        txt(slide, x + 0.2, y + 0.14, w - 0.4, 0.35, [(term, 13.5, WHITE, True, False, None)])
-        txt(slide, x + 0.2, y + 0.52, w - 0.4, 0.75, [(gloss, 10.5, MUTED, False, False, 1.2)])
+        txt(slide, x + 0.22, y + 0.15, w - 0.44, 0.4, [(term, 13.5, TEAL, True, False, None)])
+        txt(slide, x + 0.22, y + 0.6, w - 0.44, 0.85, [(gloss, 10.5, MUTED, False, False, 1.2)])
 
-    txt(slide, 0.9, 6.15, 11.5, 0.45,
-        [("The promise from slide 1, kept: skip them today, look them up the day you need them.", 12.5, AMBER, False, True, None)],
-        align=PP_ALIGN.CENTER)
+    txt(slide, 0.9, 6.35, 11.6, 0.45,
+        [("Every one of these earned its place the same way everything today did: a real failure demanded it.",
+          12.5, AMBER, False, True, None)], align=PP_ALIGN.CENTER)
     return slide
 
 
-def build_s13_closing(prs, notes):
-    slide = base_slide(prs, "TAKE-AWAY", "Make it fit the domain", notes)
+def build_s17_takeaways(prs, notes):
+    slide = base_slide(prs, "TAKE-AWAYS", "Three things to take home", notes)
 
-    txt(slide, 1.1, 2.2, 11.2, 0.45,
-        [("The thought you held from the start: every domain adds needs no generic product anticipates. For example:", 13.5, MUTED, False, True, None)])
-
-    domains = [
-        ("GIS assistant", "should know what the user is looking at right now — layers on, zoom, last click — not just answer from documents"),
-        ("Weather assistant", "documents describe the past; its whole job is the future — forecasting must live inside it"),
-        ("Finance assistant", "data moves all day — in idle time it analyses what changed and prepares answers people are about to ask"),
+    takeaways = [
+        ("An AI product is mostly ordinary software", "one AI box — and YOUR code decides what it reads."),
+        ("Embeddings", "words as numbers, meaning as distance. The one concept to keep."),
+        ("RAG — Retrieve, Augment, Generate", "you built it today, phase by phase, failure by failure."),
     ]
-    left = 0.9
-    right = SLIDE_W - 0.9
-    gap = 0.25
-    w = (right - left - 2 * gap) / 3
-    y = 2.85
-    h = 2.15
-    for i, (head, body) in enumerate(domains):
-        x = left + i * (w + gap)
-        card(slide, x, y, w, h, fill=PANEL, line_color=TEAL if i == 0 else PANEL_LINE)
-        txt(slide, x + 0.22, y + 0.2, w - 0.44, 0.4, [(head, 15, TEAL, True, False, None)])
-        txt(slide, x + 0.22, y + 0.7, w - 0.44, 1.3, [(body, 11.5, WHITE, False, False, 1.3)])
+    for i, (head, body) in enumerate(takeaways):
+        y = 2.15 + i * 1.15
+        card(slide, 0.9, y, 11.55, 0.95, fill=PANEL, line_color=TEAL if i == 1 else PANEL_LINE)
+        num = circle(slide, 1.5, y + 0.475, 0.5, fill=AMBER if i == 1 else TEAL)
+        centered_label(num, str(i + 1), 15, BG)
+        box = slide.shapes.add_textbox(Inches(2.0), Inches(y), Inches(10.2), Inches(0.95))
+        tf = box.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]
+        r1 = p.add_run()
+        r1.text = head
+        r1.font.name = FONT
+        r1.font.size = Pt(15)
+        r1.font.bold = True
+        r1.font.color.rgb = WHITE
+        r2 = p.add_run()
+        r2.text = "  —  " + body
+        r2.font.name = FONT
+        r2.font.size = Pt(13)
+        r2.font.color.rgb = MUTED
 
-    txt(slide, 0.9, 5.35, 11.5, 0.45,
-        [("The recipe is public — fitting it to a domain is the part that's yours to chase.", 14, AMBER, False, True, None)],
+    txt(slide, 0.9, 5.75, 11.55, 0.45,
+        [("The recipe is public. Fitting it to YOUR domain is the part that's yours.", 13.5, AMBER, False, True, None)],
         align=PP_ALIGN.CENTER)
-
-    txt(slide, 0.9, 5.95, 11.5, 0.7, [("Thank you — questions?", 26, WHITE, True, False, None)],
+    txt(slide, 0.9, 6.25, 11.55, 0.6, [("Thank you — questions?", 24, WHITE, True, False, None)],
         align=PP_ALIGN.CENTER)
     return slide
 
 
 NOTES = {
-    "s01_title": (
-        "Good afternoon everyone, thanks for having me. I'm Arif, Analyst Programmer at Wimmera CMA in "
-        "regional Victoria — my day job is building software and mapping systems for a natural-resource "
-        "agency. Over the past year I've built several AI-powered tools for my organisation, but only a "
-        "handful ended up genuinely used to solve a real problem — the rest were experiments. One that's in "
-        "real daily use is a chatbot, and today I'll walk you through what it actually takes to build one "
-        "properly, using the real problems I ran into along the way. Since I can't share my workplace's "
-        "internal documents publicly, we'll use a stand-in case study: MetMate, an imaginary chatbot for "
-        "Sydney Met itself, answering student questions about enrolment, library, and exam rules. Same "
-        "ideas, public-friendly example. One promise before we start: this lecture stays at the level of "
-        "concepts, so I'll use technical terminology sparingly and carefully. New terms appear in this "
-        "field literally every day; nobody memorises them all. If a term flies past you today, don't worry "
-        "— the important ones keep coming back, you can always look them up later, and you'll be able to "
-        "follow the ideas either way."
+    "s01": (
+        "[~1 min] Good afternoon everyone, thank you for having me. I'm Arif — Analyst Programmer at "
+        "Wimmera CMA in regional Victoria. My day job is building software and mapping systems, and over "
+        "the last year I have built several AI tools for my organisation. One of them is a chatbot that "
+        "answers questions from official documents, and it is in real daily use. Today I will show you how "
+        "such a chatbot really works — by building one from zero, in five phases. Each phase will hit a "
+        "real problem, and the problem will force the next idea. I can't show my workplace's internal "
+        "system, so we will use a stand-in: MetMate, an invented chatbot for Sydney Met itself, answering "
+        "student questions about enrolment, the library, and exams. Same ideas, public-friendly example. "
+        "One promise before we start: concepts over terminology. Every technical term will arrive only "
+        "when the story needs it, and I will define it in plain English when it does. Nothing to memorise "
+        "up front — and everything can be looked up later."
     ),
-    "s02_upload": (
-        "So, a chatbot that answers student questions from the university's documents. Let's start with the "
-        "laziest possible version: take an existing product like ChatGPT, upload the student handbook PDF, "
-        "and start asking questions. And honestly — it works. For one document, one person, one paid seat. "
-        "But look at what that means for an institution. To give this to every student, Sydney Met would "
-        "either have to build its own ChatGPT-like product from scratch, or buy a paid subscription seat "
-        "for every single student — and either way, the documents keep changing and thousands of students "
-        "ask questions at the same time. Neither option scales. What we need is one shared bot, always "
-        "current, serving everyone at once. That's the real engineering problem, and it starts here."
+    "s02": (
+        "[~2 min] Phase one. The simplest possible way to talk to your documents — and it needs no code at "
+        "all. Open ChatGPT, attach the student handbook PDF, type your question. Done. What happens under "
+        "the hood? For text, you can imagine it very simply: the full text of the document and your "
+        "question are glued together into ONE long piece of text, and the model reads all of it and writes "
+        "an answer. That's the picture — one big string of text. Keep it in your head, because the whole "
+        "lecture is about improving this one picture. Two small notes. First, today we care about text "
+        "only — what happens with images or complex files is a story for another day. Second, and "
+        "honestly: this works. If you are one person with one document, this is genuinely the right "
+        "solution, and my honest advice is: just do this. The rest of this lecture exists because a "
+        "university is not one person."
     ),
-    "s03_why_not": (
-        "A fair question before we build: chatbots are everywhere now, so why not grab a ready-made one, "
-        "the way we grab Chrome for browsing? Nobody builds their own browser. Four reasons this is "
-        "different, at least today. First, expectations are genuinely diversified — one organisation cares "
-        "most about security and where its data lives, another about raw speed, another about cost, "
-        "another about reliability under heavy use. A browser mostly just needs to render a page; a "
-        "chatbot's bar depends entirely on who's asking. Second, this field is comparatively new, so "
-        "common expectations aren't even well defined yet — there's no agreed checklist like there is for "
-        "browsers. Third, 'no-code' chatbot builders exist that promise exactly this, but in my own "
-        "experience they're more complicated to use well than they claim, and how far you can customise "
-        "the behaviour is limited. Fourth — and I say this half-joking — this space moves so fast that a "
-        "genuinely good ready-made bot might exist by the time we finish this lecture; when I checked "
-        "before preparing this, it wasn't there yet. So for now, you still have to build, or at least "
-        "understand the build well enough to steer it. And beyond these four there's a deeper reason "
-        "you'll see by the end of the hour: every domain has specific needs that no generic product "
-        "anticipates. Hold that thought — we'll come back to it in the very last slide."
+    "s03": (
+        "[~2.5 min] So why can't Sydney Met just tell 30,000 students 'go upload the handbook to "
+        "ChatGPT'? Three problems. One — ChatGPT is somebody else's product. We can't put ChatGPT itself "
+        "on the university website; to offer that experience ourselves we would have to build our own "
+        "ChatGPT-like product, which is a huge job. Two — the alternative is that every student needs "
+        "their own paid subscription. Thousands of seats, just to ask about the handbook. Three — and "
+        "this is the quiet killer — a real answer often needs several documents at once: the handbook, "
+        "the library rules, the exam procedures. And these documents evolve; they change through the "
+        "year. Expecting every student to re-upload the right, current pile of PDFs into every private "
+        "chat, every time — that will simply never happen. Now our first technical term of the day. That "
+        "pile of official documents the bot must answer from has a name: the Knowledge Base — the KB. "
+        "And notice the teal box on the slide — every time you see a box like that today, it means a new "
+        "term just entered our story, defined in plain English, ready to be looked up later. So here is "
+        "what we actually want: ONE bot, OUR OWN, sitting on the university website, always reading the "
+        "CURRENT documents. That means we build. Phase two."
     ),
-    "s04_birdseye": (
-        "Here's the whole of MetMate at a glance — deliberately coarse, just a handful of boxes. The top "
-        "lane happens once, ahead of time, before any student asks anything: the documents get broken up "
-        "and organised into an index, a searchable form. The bottom lane runs live, every single time a "
-        "student asks: the question searches that index, the best passages feed a draft answer, the draft "
-        "gets checked, and only then does the student see a reply. Keep this map in your head — the rest "
-        "of the lecture is a magnifying glass moving across it, one box at a time. Three things worth "
-        "saying while we look at it. First: a chatbot is usually the very first exercise in any course on "
-        "large language models — LLMs, the AI models behind tools like ChatGPT — because the task is well "
-        "defined, and with decent hardware you can build a complete chatbot running entirely on your own "
-        "machine with free local models. Second: this is a young, still-growing field, so there is no "
-        "standard blueprint for this diagram. What you're seeing is one way — the way we built it. Third — "
-        "and this is where real life differs from the course exercise: real users expect quality answers, "
-        "fast, at any scale, without the organisation running a data centre. So this system quietly calls "
-        "three commercial AI services over the internet — three API providers. OpenAI turns text into its "
-        "searchable meaning form and handles the fast mechanical chores, Anthropic writes the final "
-        "answers, and Cohere re-orders search results by relevance. You pay per use, and in exchange "
-        "nobody has to own a single GPU."
+    "s04": (
+        "[~2.5 min] Phase two: our own bot, the smallest one possible. Three pieces. A web page with a "
+        "chat box — ordinary web development, many of you can build this already. A server behind it — "
+        "ordinary backend code. And the model? We don't have our own model — but the maker of ChatGPT "
+        "sells access to the machine behind it. That is the OpenAI API. A quick word on names, because "
+        "it confuses everyone: ChatGPT is the product, the website you chat with. OpenAI is the company, "
+        "and the API is how our program talks to their model directly. API — a doorway for programs: our "
+        "server sends text over the internet, the model's reply comes back as text. No chat window "
+        "involved. I should also say: you don't have to use a paid API at all. You can run a free model "
+        "on your own machine — a popular tool for that is called Ollama — and everything in this lecture "
+        "would work the same way. For a concrete picture, for the rest of the talk, let's say we use the "
+        "OpenAI API. And what does our server actually send? Exactly the phase-one trick, just through "
+        "pipes: one big string — every document in the KB, plus the student's question."
     ),
-    "s05_phase1": (
-        "Let's build phase one, the bare minimum. Almost everything in the map is standard software; the "
-        "only genuinely new problem is the search box — given a question and thousands of passages, find "
-        "the few that matter. The simplest possible answer: match words. Count how many words the question "
-        "shares with each passage, give rare words a bit more weight, and the passage with the most "
-        "overlap wins. This is decades-old search technology — it's fast, it's simple, it needs no AI at "
-        "all. The winning passages then go to the language model, which phrases a reply out of them. And "
-        "that's phase one complete: a working chatbot. Now watch it fail."
+    "s05": (
+        "[~2.5 min] Let's make that string concrete, because this exact shape carries the rest of the "
+        "lecture. You can imagine the model receives a text like this: the word 'Context', then the "
+        "documents pasted in; the word 'Question', then the student's question; then one instruction — "
+        "'answer using only the context above'. Two terms arrive here. This whole message, everything we "
+        "send, is called the PROMPT. And the reference material we paste in for the model to answer from "
+        "is called the CONTEXT. Now the important realisation: this is ALL the model sees. It has no "
+        "memory of Sydney Met, no hidden database, no idea our university exists. If the right fact is "
+        "not somewhere in that prompt, the model can only guess. So the whole craft of a document chatbot "
+        "comes down to one question: WHAT goes into this text? Hold that — it is the rest of the lecture."
     ),
-    "s06_phase1_breaks": (
-        "A student asks: 'Can I access the library 24/7?' Somewhere in the documents there's an appendix "
-        "about exam periods, and it literally contains the words '24/7 access'. The general rule — the one "
-        "that actually governs an ordinary week — says open 8am to 10pm during term time, and it shares "
-        "almost no words with the question. Count the overlap: the appendix scores high, the real rule "
-        "scores low, and MetMate confidently tells the student the library never closes. Every word of "
-        "that answer came from a real document — and it's still wrong, because word matching rewards the "
-        "passage that echoes the question, not the rule that applies. This is the single most important "
-        "failure mode of naive search, and the first version of my real bot did exactly this. A confident "
-        "wrong answer is worse than no answer, so phase one is dead. Notice that two things broke at once: "
-        "search matched words instead of meaning, and nothing anywhere asked 'does this rule even apply "
-        "right now?' Phase two fixes both."
+    "s06": (
+        "[~3 min] Before we go further, pause and look at what we have — because there is an important "
+        "observation here. Any 'AI system' you meet is not fully AI. The web page — ordinary code. The "
+        "server — ordinary code. Gluing strings together — ordinary code. Exactly ONE box in this "
+        "picture is AI: the model. There is a clean way to tell the two worlds apart — not by "
+        "definition, but by behaviour. Ordinary code is DETERMINISTIC: same input, same output, every "
+        "single time. You can test it, trust it, debug it — the skills you already have from software "
+        "engineering apply directly. The model is NON-DETERMINISTIC: ask the exact same question twice "
+        "and the wording of the answer may differ. So when you hear 'AI system', picture this slide: one "
+        "non-deterministic box, surrounded by ordinary, deterministic software. And here is the part I "
+        "want you to remember as future developers: most of the work — and most of the value you add — "
+        "lives in the deterministic part. That is where we spend the rest of today."
     ),
-    "s07_phase2_meaning": (
-        "First half of the fix: teach the computer meaning. That's what an embedding does — it converts a "
-        "piece of text into a list of numbers. Think of it as plotting the text as a point in space, where "
-        "meaning determines position: texts about similar things land near each other, even if they share "
-        "no words at all. The classic illustration: take the point for 'queen', subtract the direction for "
-        "'female', add the direction for 'male', and you land close to 'king'. The model captured a real "
-        "relationship purely from patterns in language, as geometry. So during the build-once lane, every "
-        "passage of every document becomes a point; live, the student's question becomes a point too, and "
-        "search stops being 'count the shared words' and becomes 'find the nearby points'. A passage about "
-        "opening hours now lands right next to a question about opening hours, even when the wording is "
-        "completely different. That's half the fix."
+    "s07": (
+        "[~2.5 min] Now phase two breaks. A university KB is not one handbook — it's hundreds of PDFs. "
+        "Say 300 PDFs, roughly two million words. And our design sends ALL of it, for EVERY question — "
+        "even for 'what are the library hours?'. I can tell you from experience what happens, because my "
+        "first real bot was built exactly this way: it took about a MINUTE to answer. Nobody sits in a "
+        "chat window waiting a minute. And think about what we are doing — almost everything we send is "
+        "completely irrelevant to the question being asked. One honest disclaimer before we fix it: we "
+        "will NOT open up how the model itself works today. That is a deep field of its own, and for "
+        "this lecture the model stays a very capable magic box. Our job — the chatbot developer's job — "
+        "is to feed that box well: fast, and accurate. So the direction is obvious: send LESS. But which "
+        "part? That question is phase three."
     ),
-    "s08_phase2_scope": (
-        "Here's the second half, and it's the subtler one. Even searching by meaning, the exam-period "
-        "passage still comes up — it genuinely is about library access. The missing ingredient is context: "
-        "when each passage is stored, attach the conditions under which it applies — 'exam period only', "
-        "'term time', whatever the surrounding document says. Now the pieces the bot retrieves aren't bare "
-        "sentences; they're sentences that carry their own scope, and a simple check can set aside the "
-        "ones whose conditions don't hold for this question. Ask about ordinary library hours and the "
-        "appendix steps back: 8am to 10pm in term time, 24/7 only during exams. Phase two, MetMate answers "
-        "the library question correctly. This idea — every piece of information carrying the context of "
-        "when it's true — is probably the most transferable lesson in this whole lecture."
+    "s08": (
+        "[~3 min] Here's the idea. For any single question, only a few paragraphs out of the whole KB "
+        "actually matter. So — ahead of time — we cut every document into small pieces. New term: a "
+        "CHUNK. A chunk is a small passage cut from a document, a few paragraphs, ideally about one "
+        "topic. Then, when a question arrives, we pick the top five or ten chunks that look most "
+        "relevant, and we build exactly the same prompt as before — same Context-Question shape — just "
+        "with those few chunks as the context instead of everything. Two hundred pages become two pages, "
+        "per question. And one framing I really want you to keep. How the model answers from the text we "
+        "give it — that is not our department; we take it as given. But choosing WHAT it reads — that is "
+        "precisely where you, the chatbot developer, show your skill. Answering like ChatGPT does is a "
+        "giant AI problem; picking the right text is an engineering problem, and it is YOUR problem. "
+        "Almost everything that made my real bot better over time happened in this choosing step."
     ),
-    "s09_phase3_breaks": (
-        "Phase two works, so we got ambitious. A chatbot speaking to students on behalf of a university "
-        "must not invent things — language models will happily produce fluent, confident, wrong sentences. "
-        "So we added a safety check: before any answer is shown, a second pass verifies every claim "
-        "against the passages that search retrieved, and unsupported claims kill the answer. Sensible, "
-        "right? Here's what happened. A student asks: 'How many kinds of special consideration are "
-        "there?' MetMate drafts the correct answer — six categories — because alongside the index it keeps "
-        "a master list, a table of contents of every rule section, built directly from the documents. But "
-        "search, tuned to fetch a handful of relevant passages, only pulled the full text for two of the "
-        "six. The checker finds four claims with no passage in hand, stamps them 'unsupported', and throws "
-        "the whole answer away. The bot tells the student 'I couldn't confidently find this' — on a "
-        "question it demonstrably could answer. Too shy is a real failure too."
+    "s09": (
+        "[~3.5 min] So how do we pick the right chunks? First question to ask: do we need AI for this? "
+        "And the honest answer is NO — and I want you to see that concretely. Here is the KB as it is "
+        "actually stored: a plain table of chunks. Nothing exotic. The question comes in: 'What are the "
+        "library opening hours?' Now just count shared words. Chunk A — the library hours rule — shares "
+        "three: library, opening, hours. Chunk B, about enrolment — zero. Chunk C, the exam appendix — "
+        "one: library. Chunk A wins, and chunk A is genuinely the right passage. Add one refinement — "
+        "rare words count extra, because 'library' says more than 'the' — and you have essentially "
+        "rebuilt BM25, the scoring recipe search engines ran on for decades. This is how search worked "
+        "before AI — and notice, it is still ordinary deterministic code: a word table and counting. "
+        "Build this, wire it into our pipeline, and something surprising happens: the bot suddenly feels "
+        "GOOD. Fast, cheap, and usually right. My real bot at this stage was already impressing people. "
+        "Usually right. Remember that word — usually."
     ),
-    "s10_phase3_fix": (
-        "The fix is not to loosen the check — it's to give it the right evidence for each kind of claim. "
-        "Claims about what exists, or how many there are: the master list is the authority. It was built "
-        "directly from the documents themselves, so it's exactly as trustworthy as they are. Claims about "
-        "the detail of one specific rule: those still require the actual passage, no exceptions. "
-        "Existence and detail need different evidence — miss that distinction and your bot goes shy on "
-        "precisely the questions it's best equipped to answer. And when a claim genuinely has neither kind "
-        "of evidence? The bot doesn't guess. It quietly searches once more with a sharper query, and if "
-        "the support still isn't there, it tells the student honestly that it doesn't know. That's the "
-        "whole honesty policy in one breath: never show an unchecked answer, never refuse what you can "
-        "prove, and when you truly can't — say so. Phase three complete, and this is the version people "
-        "can rely on."
+    "s10": (
+        "[~3.5 min] Here is the failure that ends phase three — and it is a real one; my bot did exactly "
+        "this, and this example is its public stand-in. Week three of term. A student asks: 'Can I "
+        "access the library 24/7?' Count the words. The Exam Period Appendix contains 'library', "
+        "'access', AND '24/7' — score three, top result. The general rule — the one that actually "
+        "governs an ordinary week — says 'library opening hours 8am to 10pm on term days'. It shares "
+        "one word. Score one. Left behind. So MetMate answers, fluently and confidently: 'Yes — the "
+        "library is open 24/7.' Wrong. And notice the scary part: every single word of that answer came "
+        "from a real official document. Word counting rewards the chunk that ECHOES the question — not "
+        "the rule that APPLIES. There's a quieter failure hiding underneath too: a question about "
+        "'enrolment' scores ZERO against a chunk that says 'registration'. Synonyms are invisible to "
+        "word counting. Both failures point the same way. Matching exact words — the technical name is "
+        "LEXICAL matching — is not enough. We need to match MEANING — SEMANTIC matching. How on earth "
+        "does a computer compute with meaning? That is phase four, and it is the heart of this lecture."
     ),
-    "s11_architecture": (
-        "Now zoom back out — same map as the start, but grown. The grey boxes are phase one, the bare "
-        "skeleton: split the documents, match, draft, reply. The teal boxes are phase two: the meaning "
-        "index, the applicability labels, the filter that keeps only rules that apply right now. The "
-        "amber boxes are phase three: the master list, the claim checker, the retry, and the honest 'I "
-        "don't know'. Here's the point of this slide: nothing in this picture was designed up front. Every "
-        "coloured box exists because a real failure forced it. Which means you don't need the perfect "
-        "architecture on day one — you need a working skeleton, and the discipline to treat every failure "
-        "as a design instruction."
+    "s11": (
+        "[~3 min] To match meaning, we need to be able to do MATH with words. Take three words from our "
+        "university world: enrolment, registration, withdrawal. You and I know enrolment and "
+        "registration are nearly the same thing, and withdrawal is roughly the opposite. The question "
+        "is: how can a computer measure that? Here is the simple, almost silly idea: give every word a "
+        "NUMBER. Enrolment: 5. Registration: 6. Withdrawal: minus 5. Now 'how similar?' becomes 'how "
+        "close?' — plain subtraction. Five and six are one apart: close, similar. Five and minus five "
+        "are ten apart: far, opposite. This idea — writing words as numbers so that close numbers mean "
+        "similar meaning — is called an EMBEDDING. And I will say this directly: if you take only ONE "
+        "thing home from this lecture, I would be very glad if it is this concept. Understand embeddings "
+        "and half of the modern LLM world becomes accessible to you. But there's a problem with one "
+        "number per word. Along comes the word 'pass'. Where does it go on this line? It's not similar "
+        "to enrolment. It's not the opposite either. It's just… about something else. One number is not "
+        "enough."
     ),
-    "s12_skipped": (
-        "Remember the promise from slide one — that terms keep coming back? Here are six I deliberately "
-        "skipped today, all quietly at work in the real system. Hybrid retrieval: run word search and "
-        "meaning search together and merge the results — old and new search are better combined than "
-        "either alone. Reranking: a second, smarter pass re-orders the passages search found. Query "
-        "rewriting: clean the student's question into a sharp search query before searching. Question "
-        "splitting: one compound question becomes several simple ones, answered together. Conversation "
-        "memory: condense the chat so far into one standalone question, so 'what about postgrads?' makes "
-        "sense on its own. And the two-model design: a cheap, fast model does all this mechanical "
-        "plumbing, while the strong, expensive model only writes the final answer — that's how the system "
-        "stays both smart and affordable. None of these changes the story you just saw; they squeeze out "
-        "the last twenty percent of quality. When you need them, look them up — you now have the map they "
-        "attach to."
+    "s12": (
+        "[~4 min] The fix: give each word SEVERAL numbers instead of one — a list. New term: a VECTOR. "
+        "In our context, a vector is just a list of numbers. Let the first number measure the "
+        "enrolment-versus-withdrawal direction, and the second measure the pass-versus-fail direction. "
+        "Now watch. Enrolment: [5, 0] — strongly about enrolling, nothing to do with passing or "
+        "failing. Registration: [6, 0]. Withdrawal: [minus 5, 0]. Pass: [0, 5] — nothing to do with "
+        "enrolment. And fail: [0, minus 5], a bonus word. Each slot in the list is called a DIMENSION — "
+        "a 3-number vector is 3-dimensional, and so on. Now think about the word 'course'. It's related "
+        "to enrolment — you enrol in a course. It's related to passing — you pass a course. But it is "
+        "not quite either. Do we need a third slot for it? We could add one — or we can reuse what we "
+        "already have: course = [2.5, 2.5]. A bit of both. And that is the deep trick of embeddings: we "
+        "do NOT need a new dimension for every word. A few hundred well-chosen dimensions can place "
+        "hundreds of thousands of words, each word a point, similar words nearby. Real production "
+        "embeddings use roughly three hundred to three thousand dimensions — not two — but it is "
+        "exactly this idea, just with more room. Meaning has become geometry: distance IS similarity."
     ),
-    "s13_closing": (
-        "Last thing — back to the thought I asked you to hold at the start: why ready-made bots don't "
-        "quite fit. Everything we built today is the generic recipe, and the recipe is public — anyone "
-        "can follow it. The value, and honestly the fun, is fitting it to a domain. Three quick examples "
-        "from the kinds of tools I get to build. A GIS assistant — mapping is my own field — shouldn't "
-        "just answer questions about map data; it should know what the user is looking at right now: "
-        "which layers are on, where they've zoomed, what they just clicked. A weather assistant can't "
-        "only quote documents, because documents describe the past — its whole job is the future, so "
-        "forecasting has to live inside it. A finance assistant sits on data that moves all day, so in "
-        "its idle time it should be analysing what just changed and preparing the answers people are "
-        "about to ask. Same skeleton, three completely different bots. Somewhere in whatever field you "
-        "end up working in, there's a version of this waiting to be fitted — and that part isn't in any "
-        "tutorial. That part is yours. Thank you — happy to take questions."
+    "s13": (
+        "[~2.5 min] One question should be bothering you: who assigns all these numbers? If we typed "
+        "them by hand it would literally take forever — and we'd argue for a week about 'course'. The "
+        "answer: nobody assigns them. They are LEARNED. Here is one classic recipe. Take millions of "
+        "real sentences. Hide a word: 'Students must ______ before the census date.' Make the computer "
+        "guess the missing word. Notice the beautiful part — this needs no human answer sheet, because "
+        "the hidden word IS the answer. Words that fit the same gaps — enrol, register — get pushed "
+        "toward nearby numbers. Words that never fit that gap — 'party' — drift away. Repeat over "
+        "millions of sentences, and the numbers assign themselves. The general name for this — learning "
+        "the number-form of things from data instead of designing it by hand — is REPRESENTATION "
+        "LEARNING. And there is a famous party trick you can look up later: with vectors learned this "
+        "way, king minus man plus woman lands almost exactly on queen. The arithmetic works because "
+        "meaning became geometry."
+    ),
+    "s14": (
+        "[~3.5 min] Now plug embeddings into MetMate. In the build-once lane, when we cut the KB into "
+        "chunks, we now also compute each chunk's vector and store both — you can see the stored KB is "
+        "still just a table: chunk text, plus its vector. In the live lane, the question becomes a "
+        "vector too, and 'search' now means: find the chunks whose vectors sit CLOSEST to the "
+        "question's vector. The closeness score between two vectors has an official name — cosine "
+        "similarity — one more look-up-able term; it is nothing more than 'how close are these two "
+        "lists of numbers'. Watch it work. 'How do I fix a mistake in my registration?' The right "
+        "chunk says 'enrolment corrections' — ZERO shared words with the question; keyword search "
+        "scores it zero and never finds it. But its vector sits right next to the question's vector — "
+        "found by meaning. Search with 'registration', and texts about 'enrolment' now come to you. "
+        "And our library trap? Ask about 24/7 access and the bot now retrieves BOTH library chunks — "
+        "the general rule and the appendix — because both are ABOUT library access times. The model "
+        "sees the full picture and answers with the condition: 8 to 10 normally, 24/7 only during "
+        "exams. Same skeleton, one box upgraded — the bot just learned meaning."
+    ),
+    "s15": (
+        "[~3 min] Zoom out and look at the whole machine — colour-coded by the phase that forced each "
+        "box into existence. Grey: the phase-two skeleton — page, server, prompt, model, answer. Teal: "
+        "phase three — cut into chunks, pick the best ones. Amber: phase four — vectors on both lanes. "
+        "Nothing in this picture was designed up front; every box exists because a failure demanded "
+        "it. Now the payoff. This exact recipe — SEARCH a knowledge base, PASTE the winners into the "
+        "prompt, let the model WRITE — has a name in the industry: RAG. Retrieval-Augmented "
+        "Generation. Retrieval — find it. Augmented — add it to the prompt. Generation — the model "
+        "writes. You did not memorise RAG today; you BUILT it, and now you own it. Two honest "
+        "footnotes. This diagram is ONE way to build a document chatbot — the field is young, there is "
+        "no standard blueprint; this is the shape my real bot uses. And notice again: exactly one box "
+        "in this whole picture is generative AI. Even the embedding step, once trained, is "
+        "deterministic — same text in, same numbers out, every time. Mostly ordinary software, "
+        "remember, around one remarkable box."
+    ),
+    "s16": (
+        "[~1.5 min] Phase five, and I'll keep it to one line per idea — these are the refinements that "
+        "separate today's teaching bot from a production bot, and every one of them is look-up-able. "
+        "Hierarchical chunking: store small chunks AND whole sections, so detail questions and "
+        "overview questions both work. Context-aware chunking: cut at natural boundaries — headings, "
+        "clauses — not blindly every five hundred words. Hybrid search: run keyword search and meaning "
+        "search together; each catches what the other misses. Reranking: a second, more careful pass "
+        "re-orders the top chunks before they enter the prompt. Conversation memory: 'what about "
+        "postgrads?' only makes sense given the chat so far — rewrite it into a full standalone "
+        "question first. And verification: before showing an answer, check every claim against the "
+        "source documents — and if the support is not there, say honestly, 'I don't know'. Each of "
+        "these earned its place in my real bot the same way everything today did: a real failure "
+        "demanded it."
+    ),
+    "s17": (
+        "[~1.5 min] Three things to take home. One: an AI product is mostly ordinary software. One AI "
+        "box — and your code, your engineering, decides what it reads. The skills you are already "
+        "building apply directly. Two: embeddings. Words as numbers, meaning as distance. That is the "
+        "one concept I asked you to keep — it unlocks half of what you will read about LLMs from here. "
+        "Three: RAG — retrieve, augment, generate. You built it today, phase by phase, failure by "
+        "failure — so it is yours now. The recipe is public; anyone can follow it. Making it work for "
+        "a real domain — your future workplace's documents, rules, quirks — that part is not in any "
+        "tutorial. That part is yours. Thank you — I'm happy to take questions."
     ),
 }
 
@@ -933,19 +1199,23 @@ def main():
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
 
-    build_s01_title(prs, NOTES["s01_title"])
-    build_s02_upload_chatgpt(prs, NOTES["s02_upload"])
-    build_s03_why_not_ready_made(prs, NOTES["s03_why_not"])
-    build_s04_birdseye(prs, NOTES["s04_birdseye"])
-    build_s05_phase1_build(prs, NOTES["s05_phase1"])
-    build_s06_phase1_breaks(prs, NOTES["s06_phase1_breaks"])
-    build_s07_phase2_meaning(prs, NOTES["s07_phase2_meaning"])
-    build_s08_phase2_scope(prs, NOTES["s08_phase2_scope"])
-    build_s09_phase3_breaks(prs, NOTES["s09_phase3_breaks"])
-    build_s10_phase3_fix(prs, NOTES["s10_phase3_fix"])
-    build_s11_full_architecture(prs, NOTES["s11_architecture"])
-    build_s12_skipped(prs, NOTES["s12_skipped"])
-    build_s13_closing(prs, NOTES["s13_closing"])
+    build_s01_title(prs, NOTES["s01"])
+    build_s02_upload(prs, NOTES["s02"])
+    build_s03_doesnt_scale(prs, NOTES["s03"])
+    build_s04_own_bot(prs, NOTES["s04"])
+    build_s05_prompt(prs, NOTES["s05"])
+    build_s06_ai_vs_not(prs, NOTES["s06"])
+    build_s07_too_slow(prs, NOTES["s07"])
+    build_s08_send_less(prs, NOTES["s08"])
+    build_s09_keyword_search(prs, NOTES["s09"])
+    build_s10_bug1(prs, NOTES["s10"])
+    build_s11_math_with_words(prs, NOTES["s11"])
+    build_s12_vectors(prs, NOTES["s12"])
+    build_s13_learned_numbers(prs, NOTES["s13"])
+    build_s14_meaning_search(prs, NOTES["s14"])
+    build_s15_rag(prs, NOTES["s15"])
+    build_s16_real_world(prs, NOTES["s16"])
+    build_s17_takeaways(prs, NOTES["s17"])
 
     prs.save(OUT_PATH)
     print("saved", OUT_PATH)

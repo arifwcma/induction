@@ -1,3 +1,27 @@
+
+also if possible and not distraction, we will show that weight-training is not everything. for chatbot like solution, we dont retrain weights rather make it capable on understand documents. 
+
+
+full non ai
+
+mix - why
+
+—
+chatgpt upload - hundreds subscription 
+
+chatbot api - full doc+ question (non ai ai - diff color) - photo 
+
+rag
+
+bm25 - prob, semantic - cut
+
+hierarchical - still semantic 
+
+embedding - embed models - token
+
+
+===
+
 why not off the shelf - last slide
 
 embedding - king queen

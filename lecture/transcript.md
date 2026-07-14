@@ -1,213 +1,386 @@
-# ICT108 Guest Lecture — Slide-by-Slide Transcript
+# MetMate lecture — speaker transcript
 
-Format: 45 min talk + 15 min Q&A. Case study throughout: **MetMate**, a stand-in
-chatbot answering Sydney Met student questions about university rules. The arc:
-three build phases, each broken by a real failure and fixed by the next idea.
-Minute marks are a rehearsal budget, not a script timer. The same text is
-embedded as speaker notes in `deck.pptx`.
+ICT108 guest lecture · Tue 14 July 2026, 2:00–3:00 pm · 45 min talk + 15 min Q&A.
+One section per slide. The minute mark is a budget, not a stopwatch — if a slide runs
+over, steal from slide 16, never from slides 11–14 (the embedding block).
+
+Running total is shown at each slide so you can check the clock mid-talk.
 
 ---
 
-## Slide 1 — Title (~2 min)
-Good afternoon everyone, thanks for having me. I'm Arif, Analyst Programmer at
-Wimmera CMA in regional Victoria — my day job is building software and mapping
-systems for a natural-resource agency. Over the past year I've built several
-AI-powered tools for my organisation, but only a handful ended up genuinely
-used to solve a real problem — the rest were experiments. One that's in real
-daily use is a chatbot, and today I'll walk you through what it actually takes
-to build one properly, using the real problems I ran into along the way. Since
-I can't share my workplace's internal documents publicly, we'll use a stand-in
-case study: MetMate, an imaginary chatbot for Sydney Met itself, answering
-student questions about enrolment, library, and exam rules. Same ideas,
-public-friendly example. One promise before we start: this lecture stays at
-the level of concepts, so I'll use technical terminology sparingly and
-carefully. New terms appear in this field literally every day; nobody
-memorises them all. If a term flies past you today, don't worry — the
-important ones keep coming back, you can always look them up later, and you'll
-be able to follow the ideas either way.
+## Slide 1 — Title: Talk to Your Documents  (~1 min, total 1)
 
-## Slide 2 — Why not just upload it to ChatGPT? (~3 min)
-So, a chatbot that answers student questions from the university's documents.
-Let's start with the laziest possible version: take an existing product like
-ChatGPT, upload the student handbook PDF, and start asking questions. And
-honestly — it works. For one document, one person, one paid seat. But look at
-what that means for an institution. To give this to every student, Sydney Met
-would either have to build its own ChatGPT-like product from scratch, or buy a
-paid subscription seat for every single student — and either way, the
-documents keep changing and thousands of students ask questions at the same
-time. Neither option scales. What we need is one shared bot, always current,
-serving everyone at once. That's the real engineering problem, and it starts
-here.
+Good afternoon everyone, thank you for having me. I'm Arif — Analyst Programmer at
+Wimmera CMA in regional Victoria. My day job is building software and mapping systems,
+and over the last year I have built several AI tools for my organisation. One of them is
+a chatbot that answers questions from official documents, and it is in real daily use.
 
-## Slide 3 — Why not any ready-made chatbot? (~4 min)
-A fair question before we build: chatbots are everywhere now, so why not grab
-a ready-made one, the way we grab Chrome for browsing? Nobody builds their own
-browser. Four reasons this is different, at least today. First, expectations
-are genuinely diversified — one organisation cares most about security and
-where its data lives, another about raw speed, another about cost, another
-about reliability under heavy use. A browser mostly just needs to render a
-page; a chatbot's bar depends entirely on who's asking. Second, this field is
-comparatively new, so common expectations aren't even well defined yet —
-there's no agreed checklist like there is for browsers. Third, "no-code"
-chatbot builders exist that promise exactly this, but in my own experience
-they're more complicated to use well than they claim, and how far you can
-customise the behaviour is limited. Fourth — and I say this half-joking — this
-space moves so fast that a genuinely good ready-made bot might exist by the
-time we finish this lecture; when I checked before preparing this, it wasn't
-there yet. So for now, you still have to build, or at least understand the
-build well enough to steer it. And beyond these four there's a deeper reason
-you'll see by the end of the hour: every domain has specific needs that no
-generic product anticipates. Hold that thought — we'll come back to it in the
-very last slide.
+Today I will show you how such a chatbot really works — by building one from zero, in
+five phases. Each phase will hit a real problem, and the problem will force the next
+idea.
 
-## Slide 4 — MetMate at a glance (~4.5 min)
-Here's the whole of MetMate at a glance — deliberately coarse, just a handful
-of boxes. The top lane happens once, ahead of time, before any student asks
-anything: the documents get broken up and organised into an index, a
-searchable form. The bottom lane runs live, every single time a student asks:
-the question searches that index, the best passages feed a draft answer, the
-draft gets checked, and only then does the student see a reply. Keep this map
-in your head — the rest of the lecture is a magnifying glass moving across it,
-one box at a time. Three things worth saying while we look at it. First: a
-chatbot is usually the very first exercise in any course on large language
-models — LLMs, the AI models behind tools like ChatGPT — because the task is
-well defined, and with decent hardware you can build a complete chatbot
-running entirely on your own machine with free local models. Second: this is a
-young, still-growing field, so there is no standard blueprint for this
-diagram. What you're seeing is one way — the way we built it. Third — and this
-is where real life differs from the course exercise: real users expect quality
-answers, fast, at any scale, without the organisation running a data centre.
-So this system quietly calls three commercial AI services over the internet —
-three API providers. OpenAI turns text into its searchable meaning form and
-handles the fast mechanical chores, Anthropic writes the final answers, and
-Cohere re-orders search results by relevance. You pay per use, and in exchange
-nobody has to own a single GPU.
+I can't show my workplace's internal system, so we will use a stand-in: MetMate, an
+invented chatbot for Sydney Met itself, answering student questions about enrolment, the
+library, and exams. Same ideas, public-friendly example.
 
-## Slide 5 — Phase 1: just match the words (~3 min)
-Let's build phase one, the bare minimum. Almost everything in the map is
-standard software; the only genuinely new problem is the search box — given a
-question and thousands of passages, find the few that matter. The simplest
-possible answer: match words. Count how many words the question shares with
-each passage, give rare words a bit more weight, and the passage with the most
-overlap wins. This is decades-old search technology — it's fast, it's simple,
-it needs no AI at all. The winning passages then go to the language model,
-which phrases a reply out of them. And that's phase one complete: a working
-chatbot. Now watch it fail.
+One promise before we start: concepts over terminology. Every technical term will arrive
+only when the story needs it, and I will define it in plain English when it does.
+Nothing to memorise up front — and everything can be looked up later.
 
-## Slide 6 — Phase 1 breaks: right words, wrong rule (~4 min)
-A student asks: "Can I access the library 24/7?" Somewhere in the documents
-there's an appendix about exam periods, and it literally contains the words
-"24/7 access". The general rule — the one that actually governs an ordinary
-week — says open 8am to 10pm during term time, and it shares almost no words
-with the question. Count the overlap: the appendix scores high, the real rule
-scores low, and MetMate confidently tells the student the library never
-closes. Every word of that answer came from a real document — and it's still
-wrong, because word matching rewards the passage that echoes the question, not
-the rule that applies. This is the single most important failure mode of naive
-search, and the first version of my real bot did exactly this. A confident
-wrong answer is worse than no answer, so phase one is dead. Notice that two
-things broke at once: search matched words instead of meaning, and nothing
-anywhere asked "does this rule even apply right now?" Phase two fixes both.
+---
 
-## Slide 7 — Phase 2: search by meaning (~5 min)
-First half of the fix: teach the computer meaning. That's what an embedding
-does — it converts a piece of text into a list of numbers. Think of it as
-plotting the text as a point in space, where meaning determines position:
-texts about similar things land near each other, even if they share no words
-at all. The classic illustration: take the point for "queen", subtract the
-direction for "female", add the direction for "male", and you land close to
-"king". The model captured a real relationship purely from patterns in
-language, as geometry. So during the build-once lane, every passage of every
-document becomes a point; live, the student's question becomes a point too,
-and search stops being "count the shared words" and becomes "find the nearby
-points". A passage about opening hours now lands right next to a question
-about opening hours, even when the wording is completely different. That's
-half the fix.
+## Slide 2 — Phase 1: Upload a PDF, ask a question  (~2 min, total 3)
 
-## Slide 8 — Phase 2: say when each rule applies (~4 min)
-Here's the second half, and it's the subtler one. Even searching by meaning,
-the exam-period passage still comes up — it genuinely is about library access.
-The missing ingredient is context: when each passage is stored, attach the
-conditions under which it applies — "exam period only", "term time", whatever
-the surrounding document says. Now the pieces the bot retrieves aren't bare
-sentences; they're sentences that carry their own scope, and a simple check
-can set aside the ones whose conditions don't hold for this question. Ask
-about ordinary library hours and the appendix steps back: 8am to 10pm in term
-time, 24/7 only during exams. Phase two, MetMate answers the library question
-correctly. This idea — every piece of information carrying the context of when
-it's true — is probably the most transferable lesson in this whole lecture.
+Phase one. The simplest possible way to talk to your documents — and it needs no code at
+all. Open ChatGPT, attach the student handbook PDF, type your question. Done.
 
-## Slide 9 — Phase 3: it refuses what it knows (~4 min)
-Phase two works, so we got ambitious. A chatbot speaking to students on behalf
-of a university must not invent things — language models will happily produce
-fluent, confident, wrong sentences. So we added a safety check: before any
-answer is shown, a second pass verifies every claim against the passages that
-search retrieved, and unsupported claims kill the answer. Sensible, right?
-Here's what happened. A student asks: "How many kinds of special consideration
-are there?" MetMate drafts the correct answer — six categories — because
-alongside the index it keeps a master list, a table of contents of every rule
-section, built directly from the documents. But search, tuned to fetch a
-handful of relevant passages, only pulled the full text for two of the six.
-The checker finds four claims with no passage in hand, stamps them
-"unsupported", and throws the whole answer away. The bot tells the student "I
-couldn't confidently find this" — on a question it demonstrably could answer.
-Too shy is a real failure too.
+What happens under the hood? For text, you can imagine it very simply: the full text of
+the document and your question are glued together into ONE long piece of text, and the
+model reads all of it and writes an answer. That's the picture — one big string of text.
+Keep it in your head, because the whole lecture is about improving this one picture.
 
-## Slide 10 — Phase 3: the right evidence per claim (~4 min)
-The fix is not to loosen the check — it's to give it the right evidence for
-each kind of claim. Claims about what exists, or how many there are: the
-master list is the authority. It was built directly from the documents
-themselves, so it's exactly as trustworthy as they are. Claims about the
-detail of one specific rule: those still require the actual passage, no
-exceptions. Existence and detail need different evidence — miss that
-distinction and your bot goes shy on precisely the questions it's best
-equipped to answer. And when a claim genuinely has neither kind of evidence?
-The bot doesn't guess. It quietly searches once more with a sharper query, and
-if the support still isn't there, it tells the student honestly that it
-doesn't know. That's the whole honesty policy in one breath: never show an
-unchecked answer, never refuse what you can prove, and when you truly can't —
-say so. Phase three complete, and this is the version people can rely on.
+Two small notes. First, today we care about text only — what happens with images or
+complex files is a story for another day. Second, and honestly: this works. If you are
+one person with one document, this is genuinely the right solution, and my honest advice
+is: just do this. The rest of this lecture exists because a university is not one
+person.
 
-## Slide 11 — The whole system, built by its failures (~3 min)
-Now zoom back out — same map as the start, but grown. The grey boxes are phase
-one, the bare skeleton: split the documents, match, draft, reply. The teal
-boxes are phase two: the meaning index, the applicability labels, the filter
-that keeps only rules that apply right now. The amber boxes are phase three:
-the master list, the claim checker, the retry, and the honest "I don't know".
-Here's the point of this slide: nothing in this picture was designed up front.
-Every coloured box exists because a real failure forced it. Which means you
-don't need the perfect architecture on day one — you need a working skeleton,
-and the discipline to treat every failure as a design instruction.
+---
 
-## Slide 12 — What we skipped (~1.5 min)
-Remember the promise from slide one — that terms keep coming back? Here are
-six I deliberately skipped today, all quietly at work in the real system.
-Hybrid retrieval: run word search and meaning search together and merge the
-results — old and new search are better combined than either alone. Reranking:
-a second, smarter pass re-orders the passages search found. Query rewriting:
-clean the student's question into a sharp search query before searching.
-Question splitting: one compound question becomes several simple ones,
-answered together. Conversation memory: condense the chat so far into one
-standalone question, so "what about postgrads?" makes sense on its own. And
-the two-model design: a cheap, fast model does all this mechanical plumbing,
-while the strong, expensive model only writes the final answer — that's how
-the system stays both smart and affordable. None of these changes the story
-you just saw; they squeeze out the last twenty percent of quality. When you
-need them, look them up — you now have the map they attach to.
+## Slide 3 — Phase 1: Why this doesn't scale  (~2.5 min, total 5.5)
 
-## Slide 13 — Make it fit the domain (~3 min)
-Last thing — back to the thought I asked you to hold at the start: why
-ready-made bots don't quite fit. Everything we built today is the generic
-recipe, and the recipe is public — anyone can follow it. The value, and
-honestly the fun, is fitting it to a domain. Three quick examples from the
-kinds of tools I get to build. A GIS assistant — mapping is my own field —
-shouldn't just answer questions about map data; it should know what the user
-is looking at right now: which layers are on, where they've zoomed, what they
-just clicked. A weather assistant can't only quote documents, because
-documents describe the past — its whole job is the future, so forecasting has
-to live inside it. A finance assistant sits on data that moves all day, so in
-its idle time it should be analysing what just changed and preparing the
-answers people are about to ask. Same skeleton, three completely different
-bots. Somewhere in whatever field you end up working in, there's a version of
-this waiting to be fitted — and that part isn't in any tutorial. That part is
-yours. Thank you — happy to take questions.
+So why can't Sydney Met just tell 30,000 students "go upload the handbook to ChatGPT"?
+Three problems.
+
+One — ChatGPT is somebody else's product. We can't put ChatGPT itself on the university
+website; to offer that experience ourselves we would have to build our own ChatGPT-like
+product, which is a huge job.
+
+Two — the alternative is that every student needs their own paid subscription. Thousands
+of seats, just to ask about the handbook.
+
+Three — and this is the quiet killer — a real answer often needs several documents at
+once: the handbook, the library rules, the exam procedures. And these documents evolve;
+they change through the year. Expecting every student to re-upload the right, current
+pile of PDFs into every private chat, every time — that will simply never happen.
+
+Now our first technical term of the day. That pile of official documents the bot must
+answer from has a name: the Knowledge Base — the KB. And notice the teal box on the
+slide — every time you see a box like that today, it means a new term just entered our
+story, defined in plain English, ready to be looked up later.
+
+So here is what we actually want: ONE bot, OUR OWN, sitting on the university website,
+always reading the CURRENT documents. That means we build. Phase two.
+
+---
+
+## Slide 4 — Phase 2: Our own bot — same trick, our pipes  (~2.5 min, total 8)
+
+Phase two: our own bot, the smallest one possible. Three pieces. A web page with a chat
+box — ordinary web development, many of you can build this already. A server behind it —
+ordinary backend code. And the model?
+
+We don't have our own model — but the maker of ChatGPT sells access to the machine
+behind it. That is the OpenAI API. A quick word on names, because it confuses everyone:
+ChatGPT is the product, the website you chat with. OpenAI is the company, and the API is
+how our program talks to their model directly. API — a doorway for programs: our server
+sends text over the internet, the model's reply comes back as text. No chat window
+involved.
+
+I should also say: you don't have to use a paid API at all. You can run a free model on
+your own machine — a popular tool for that is called Ollama — and everything in this
+lecture would work the same way. For a concrete picture, for the rest of the talk, let's
+say we use the OpenAI API.
+
+And what does our server actually send? Exactly the phase-one trick, just through pipes:
+one big string — every document in the KB, plus the student's question.
+
+---
+
+## Slide 5 — Phase 2: What the model actually receives  (~2.5 min, total 10.5)
+
+Let's make that string concrete, because this exact shape carries the rest of the
+lecture. You can imagine the model receives a text like this: the word "Context", then
+the documents pasted in; the word "Question", then the student's question; then one
+instruction — "answer using only the context above".
+
+Two terms arrive here. This whole message, everything we send, is called the PROMPT. And
+the reference material we paste in for the model to answer from is called the CONTEXT.
+
+Now the important realisation: this is ALL the model sees. It has no memory of Sydney
+Met, no hidden database, no idea our university exists. If the right fact is not
+somewhere in that prompt, the model can only guess.
+
+So the whole craft of a document chatbot comes down to one question: WHAT goes into this
+text? Hold that — it is the rest of the lecture.
+
+---
+
+## Slide 6 — Phase 2: How much of this is actually AI?  (~3 min, total 13.5)
+
+Before we go further, pause and look at what we have — because there is an important
+observation here. Any "AI system" you meet is not fully AI. The web page — ordinary
+code. The server — ordinary code. Gluing strings together — ordinary code. Exactly ONE
+box in this picture is AI: the model.
+
+There is a clean way to tell the two worlds apart — not by definition, but by behaviour.
+Ordinary code is DETERMINISTIC: same input, same output, every single time. You can test
+it, trust it, debug it — the skills you already have from software engineering apply
+directly. The model is NON-DETERMINISTIC: ask the exact same question twice and the
+wording of the answer may differ.
+
+So when you hear "AI system", picture this slide: one non-deterministic box, surrounded
+by ordinary, deterministic software. And here is the part I want you to remember as
+future developers: most of the work — and most of the value you add — lives in the
+deterministic part. That is where we spend the rest of today.
+
+---
+
+## Slide 7 — Phase 2 breaks: One question, two million words  (~2.5 min, total 16)
+
+Now phase two breaks. A university KB is not one handbook — it's hundreds of PDFs. Say
+300 PDFs, roughly two million words. And our design sends ALL of it, for EVERY question
+— even for "what are the library hours?".
+
+I can tell you from experience what happens, because my first real bot was built exactly
+this way: it took about a MINUTE to answer. Nobody sits in a chat window waiting a
+minute. And think about what we are doing — almost everything we send is completely
+irrelevant to the question being asked.
+
+One honest disclaimer before we fix it: we will NOT open up how the model itself works
+today. That is a deep field of its own, and for this lecture the model stays a very
+capable magic box. Our job — the chatbot developer's job — is to feed that box well:
+fast, and accurate.
+
+So the direction is obvious: send LESS. But which part? That question is phase three.
+
+---
+
+## Slide 8 — Phase 3: Send less — pick the right pieces  (~3 min, total 19)
+
+Here's the idea. For any single question, only a few paragraphs out of the whole KB
+actually matter. So — ahead of time — we cut every document into small pieces. New term:
+a CHUNK. A chunk is a small passage cut from a document, a few paragraphs, ideally about
+one topic.
+
+Then, when a question arrives, we pick the top five or ten chunks that look most
+relevant, and we build exactly the same prompt as before — same Context-Question shape —
+just with those few chunks as the context instead of everything. Two hundred pages
+become two pages, per question.
+
+And one framing I really want you to keep. How the model answers from the text we give
+it — that is not our department; we take it as given. But choosing WHAT it reads — that
+is precisely where you, the chatbot developer, show your skill. Answering like ChatGPT
+does is a giant AI problem; picking the right text is an engineering problem, and it is
+YOUR problem. Almost everything that made my real bot better over time happened in this
+choosing step.
+
+---
+
+## Slide 9 — Phase 3: Finding the pieces — no AI needed  (~3.5 min, total 22.5)
+
+So how do we pick the right chunks? First question to ask: do we need AI for this? And
+the honest answer is NO — and I want you to see that concretely.
+
+Here is the KB as it is actually stored: a plain table of chunks. Nothing exotic. The
+question comes in: "What are the library opening hours?" Now just count shared words.
+Chunk A — the library hours rule — shares three: library, opening, hours. Chunk B, about
+enrolment — zero. Chunk C, the exam appendix — one: library. Chunk A wins, and chunk A
+is genuinely the right passage.
+
+Add one refinement — rare words count extra, because "library" says more than "the" —
+and you have essentially rebuilt BM25, the scoring recipe search engines ran on for
+decades. This is how search worked before AI — and notice, it is still ordinary
+deterministic code: a word table and counting.
+
+Build this, wire it into our pipeline, and something surprising happens: the bot
+suddenly feels GOOD. Fast, cheap, and usually right. My real bot at this stage was
+already impressing people. Usually right. Remember that word — usually.
+
+---
+
+## Slide 10 — Phase 3 breaks: Right words, wrong rule  (~3.5 min, total 26)
+
+Here is the failure that ends phase three — and it is a real one; my bot did exactly
+this, and this example is its public stand-in.
+
+Week three of term. A student asks: "Can I access the library 24/7?" Count the words.
+The Exam Period Appendix contains "library", "access", AND "24/7" — score three, top
+result. The general rule — the one that actually governs an ordinary week — says
+"library opening hours 8am to 10pm on term days". It shares one word. Score one. Left
+behind.
+
+So MetMate answers, fluently and confidently: "Yes — the library is open 24/7." Wrong.
+And notice the scary part: every single word of that answer came from a real official
+document. Word counting rewards the chunk that ECHOES the question — not the rule that
+APPLIES.
+
+There's a quieter failure hiding underneath too: a question about "enrolment" scores
+ZERO against a chunk that says "registration". Synonyms are invisible to word counting.
+
+Both failures point the same way. Matching exact words — the technical name is LEXICAL
+matching — is not enough. We need to match MEANING — SEMANTIC matching. How on earth
+does a computer compute with meaning? That is phase four, and it is the heart of this
+lecture.
+
+---
+
+## Slide 11 — Phase 4: Math with words  (~3 min, total 29)
+
+To match meaning, we need to be able to do MATH with words. Take three words from our
+university world: enrolment, registration, withdrawal. You and I know enrolment and
+registration are nearly the same thing, and withdrawal is roughly the opposite. The
+question is: how can a computer measure that?
+
+Here is the simple, almost silly idea: give every word a NUMBER. Enrolment: 5.
+Registration: 6. Withdrawal: minus 5. Now "how similar?" becomes "how close?" — plain
+subtraction. Five and six are one apart: close, similar. Five and minus five are ten
+apart: far, opposite.
+
+This idea — writing words as numbers so that close numbers mean similar meaning — is
+called an EMBEDDING. And I will say this directly: if you take only ONE thing home from
+this lecture, I would be very glad if it is this concept. Understand embeddings and half
+of the modern LLM world becomes accessible to you.
+
+But there's a problem with one number per word. Along comes the word "pass". Where does
+it go on this line? It's not similar to enrolment. It's not the opposite either. It's
+just… about something else. One number is not enough.
+
+---
+
+## Slide 12 — Phase 4: One number isn't enough — vectors  (~4 min, total 33)
+
+The fix: give each word SEVERAL numbers instead of one — a list. New term: a VECTOR. In
+our context, a vector is just a list of numbers. Let the first number measure the
+enrolment-versus-withdrawal direction, and the second measure the pass-versus-fail
+direction.
+
+Now watch. Enrolment: [5, 0] — strongly about enrolling, nothing to do with passing or
+failing. Registration: [6, 0]. Withdrawal: [minus 5, 0]. Pass: [0, 5] — nothing to do
+with enrolment. And fail: [0, minus 5], a bonus word.
+
+Each slot in the list is called a DIMENSION — a 3-number vector is 3-dimensional, and so
+on.
+
+Now think about the word "course". It's related to enrolment — you enrol in a course.
+It's related to passing — you pass a course. But it is not quite either. Do we need a
+third slot for it? We could add one — or we can reuse what we already have: course =
+[2.5, 2.5]. A bit of both.
+
+And that is the deep trick of embeddings: we do NOT need a new dimension for every word.
+A few hundred well-chosen dimensions can place hundreds of thousands of words, each word
+a point, similar words nearby. Real production embeddings use roughly three hundred to
+three thousand dimensions — not two — but it is exactly this idea, just with more room.
+
+Meaning has become geometry: distance IS similarity.
+
+---
+
+## Slide 13 — Phase 4: Who assigns the numbers?  (~2.5 min, total 35.5)
+
+One question should be bothering you: who assigns all these numbers? If we typed them by
+hand it would literally take forever — and we'd argue for a week about "course". The
+answer: nobody assigns them. They are LEARNED.
+
+Here is one classic recipe. Take millions of real sentences. Hide a word: "Students must
+______ before the census date." Make the computer guess the missing word. Notice the
+beautiful part — this needs no human answer sheet, because the hidden word IS the
+answer.
+
+Words that fit the same gaps — enrol, register — get pushed toward nearby numbers. Words
+that never fit that gap — "party" — drift away. Repeat over millions of sentences, and
+the numbers assign themselves.
+
+The general name for this — learning the number-form of things from data instead of
+designing it by hand — is REPRESENTATION LEARNING. And there is a famous party trick you
+can look up later: with vectors learned this way, king minus man plus woman lands almost
+exactly on queen. The arithmetic works because meaning became geometry.
+
+---
+
+## Slide 14 — Phase 4: MetMate searches by meaning  (~3.5 min, total 39)
+
+Now plug embeddings into MetMate. In the build-once lane, when we cut the KB into
+chunks, we now also compute each chunk's vector and store both — you can see the stored
+KB is still just a table: chunk text, plus its vector. In the live lane, the question
+becomes a vector too, and "search" now means: find the chunks whose vectors sit CLOSEST
+to the question's vector.
+
+The closeness score between two vectors has an official name — cosine similarity — one
+more look-up-able term; it is nothing more than "how close are these two lists of
+numbers".
+
+Watch it work. "How do I fix a mistake in my registration?" The right chunk says
+"enrolment corrections" — ZERO shared words with the question; keyword search scores it
+zero and never finds it. But its vector sits right next to the question's vector — found
+by meaning. Search with "registration", and texts about "enrolment" now come to you.
+
+And our library trap? Ask about 24/7 access and the bot now retrieves BOTH library
+chunks — the general rule and the appendix — because both are ABOUT library access
+times. The model sees the full picture and answers with the condition: 8 to 10 normally,
+24/7 only during exams.
+
+Same skeleton, one box upgraded — the bot just learned meaning.
+
+---
+
+## Slide 15 — All together: The whole picture — you built RAG  (~3 min, total 42)
+
+Zoom out and look at the whole machine — colour-coded by the phase that forced each box
+into existence. Grey: the phase-two skeleton — page, server, prompt, model, answer.
+Teal: phase three — cut into chunks, pick the best ones. Amber: phase four — vectors on
+both lanes. Nothing in this picture was designed up front; every box exists because a
+failure demanded it.
+
+Now the payoff. This exact recipe — SEARCH a knowledge base, PASTE the winners into the
+prompt, let the model WRITE — has a name in the industry: RAG. Retrieval-Augmented
+Generation. Retrieval — find it. Augmented — add it to the prompt. Generation — the
+model writes. You did not memorise RAG today; you BUILT it, and now you own it.
+
+Two honest footnotes. This diagram is ONE way to build a document chatbot — the field is
+young, there is no standard blueprint; this is the shape my real bot uses. And notice
+again: exactly one box in this whole picture is generative AI. Even the embedding step,
+once trained, is deterministic — same text in, same numbers out, every time. Mostly
+ordinary software, remember, around one remarkable box.
+
+---
+
+## Slide 16 — Phase 5: What real chatbots add  (~1.5 min, total 43.5)
+
+Phase five, and I'll keep it to one line per idea — these are the refinements that
+separate today's teaching bot from a production bot, and every one of them is
+look-up-able.
+
+Hierarchical chunking: store small chunks AND whole sections, so detail questions and
+overview questions both work. Context-aware chunking: cut at natural boundaries —
+headings, clauses — not blindly every five hundred words. Hybrid search: run keyword
+search and meaning search together; each catches what the other misses. Reranking: a
+second, more careful pass re-orders the top chunks before they enter the prompt.
+Conversation memory: "what about postgrads?" only makes sense given the chat so far —
+rewrite it into a full standalone question first. And verification: before showing an
+answer, check every claim against the source documents — and if the support is not
+there, say honestly, "I don't know".
+
+Each of these earned its place in my real bot the same way everything today did: a real
+failure demanded it.
+
+---
+
+## Slide 17 — Three things to take home  (~1.5 min, total 45)
+
+Three things to take home.
+
+One: an AI product is mostly ordinary software. One AI box — and your code, your
+engineering, decides what it reads. The skills you are already building apply directly.
+
+Two: embeddings. Words as numbers, meaning as distance. That is the one concept I asked
+you to keep — it unlocks half of what you will read about LLMs from here.
+
+Three: RAG — retrieve, augment, generate. You built it today, phase by phase, failure by
+failure — so it is yours now.
+
+The recipe is public; anyone can follow it. Making it work for a real domain — your
+future workplace's documents, rules, quirks — that part is not in any tutorial. That
+part is yours.
+
+Thank you — I'm happy to take questions.
