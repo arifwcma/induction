@@ -10,24 +10,50 @@ R1/R2…, one best option, no walls of text). This file holds only what is NOT i
 other `.cursor` docs.
 
 ## 0. START HERE — current state (read this first)
-- **Deadline: lecture is Tue 14 July 2026, 2:00–3:00 pm.** 45 min talk + 15 min Q&A.
-- **The deck was rebuilt AGAIN on the morning of Tue 14 July (~10 am), on Arif's
+- **Deadline: lecture is TODAY, Tue 14 July 2026, 2:00–3:00 pm.** 45 min talk + 15 min
+  Q&A. It is now ~10:40 am — roughly 3 hours left. Steer everything toward rehearsal;
+  only make edits Arif explicitly asks for.
+- **The deck was rebuilt from scratch this morning (~10:00–10:30 am), on Arif's
   explicit instruction.** He rejected the Mon-night 13-slide deck as "complicated for
-  general IT audience, not flowing well, too much for one session, not much take away".
-  The old deck is in git (commit `c0c021f`) if ever needed. The live artefacts are:
+  general IT audience, not flowing well, too much for one session, not much take away"
+  and dictated a new 5-phase structure himself (fundamentals, StatQuest-style
+  jargon-in-context, embeddings as THE takeaway). The old deck is in git (commit
+  `c0c021f`) if ever needed. The live artefacts are:
   - `lecture/deck.pptx` — 17 slides, 5-phase fundamentals narrative (see §4).
   - `lecture/transcript.md` — speaker prose, one section per slide, minute marks with
     running totals, sums to exactly 45.
   - `lecture/build_deck.py` — the generator. Source of truth for pptx content.
-- **NOT yet committed** — morning rebuild happened after last push (`c0c021f`, Mon
-  22:49). Commit when he asks (lecture work goes straight to `main`).
-- **`notes.txt` (repo root) is now PROCESSED/superseded** — the Tue-morning redesign
-  instruction from Arif folded its items in: "embedding - king queen" → slide 13 notes
-  aside; "openai api / ollama - local" → slide 4; "embedding not ai" → slides 6 and 15
-  (deterministic vs non-deterministic framing); "terminologies" → term-chip system;
-  "why not off the shelf" → phase 1. Ask before deleting the file.
-- **What's left, in order:** Arif reviews the new deck → wording tweaks → rehearsal
-  (his real bottleneck, §6) → commit + push.
+- **Arif committed the rebuild himself at 10:38 am (`ffd0bb6`), then HAND-EDITED
+  `deck.pptx` in PowerPoint during review:** removed the "GUEST LECTURE · ICT108 ·
+  SYDNEY MET" eyebrow, the MetMate subtitle line, the promise card and the phase strip
+  from the title slide, and removed the "ICT108 · MetMate case study" text from every
+  footer. These edits were detected via a text-dump diff and FOLDED INTO
+  `build_deck.py` (verified: script output now textually identical to on-disk pptx).
+  Everything committed + pushed ~10:45 am together with this handover. He gave no
+  other feedback on the deck yet. NOTE: `deck.pptx` may still be OPEN in PowerPoint
+  (`~$deck.pptx` lock file present, untracked — leave it alone); don't regenerate
+  while it's open.
+- **`notes.txt` (repo root) GREW during his review (~10:30–10:40 am) — the NEW lines
+  are UNPROCESSED.** The file has two parts separated by `===`:
+  - BELOW the `===` = Monday-night jottings, already absorbed into the redesign
+    ("king queen" → slide 13, "ollama - local" → slide 4, "embedding not ai" → slides
+    6/15, "terminologies" → term chips, "why not off the shelf" → phase 1).
+  - ABOVE the `===` = NEW Tue-morning jottings. Verbatim gist: "weight-training is not
+    everything — for chatbot we don't retrain weights, rather make it capable on
+    understanding documents" (flagged by Arif himself as 'if possible and not
+    distraction' — likely a fine-tuning-vs-RAG remark, candidate for slide 15 or a
+    spoken aside); "full non ai / mix - why"; "chatgpt upload - hundreds subscription";
+    "chatbot api - full doc + question (non ai ai - diff color) - photo"; "rag";
+    "bm25 - prob, semantic - cut"; "hierarchical - still semantic"; "embedding - embed
+    models - token". NOTE: most of these mirror the new deck's slide order, so they may
+    be his REHEARSAL outline / talking points rather than change requests — but "photo"
+    and "diff color" might be visual asks. DO NOT guess-implement. Ask him to walk
+    through the new lines one by one: edit, talking point, or already covered.
+- **`boyan.txt` (repo root, new, untracked-until-this-push) reads: "Intro /
+  terminologies / MetMate".** Purpose unknown — possibly his opening-minutes outline,
+  possibly notes for a person (Boyan?). Ask, don't assume.
+- **What's left, in order:** walk through new `notes.txt` lines with Arif → any final
+  wording tweaks → REHEARSAL (the real bottleneck, §6).
 
 ## 1. The engagement (fixed facts)
 - Arif is a GUEST LECTURER for unit **ICT108** at **Sydney Met** (Sydney Metropolitan).
@@ -193,14 +219,15 @@ Slide list (exact titles · minute mark · running total):
   regenerate `flyer.pptx`.
 
 ## 6. What's actually left / how to steer
-1. **Arif reviews the Tue-morning deck** — expect wording tweaks. Keep the embedding
-   block (11–14) intact; keep toy numbers consistent (§2).
-2. **Rehearsal is the real bottleneck** (his own admission). Push him to read
-   `transcript.md` aloud 2–3 full passes against the clock rather than polishing
-   slides. The transcript carries running totals so he can check the clock mid-talk.
-   If he overruns, steal from slide 16 — never from 11–14.
-3. **Commit + push** `deck.pptx`, `transcript.md`, `build_deck.py` (and this file) when
-   he says so — he may present from a different machine.
+1. **Process the NEW `notes.txt` lines with Arif** (see §0) — line by line, each
+   becomes an edit, a talking point, or "already covered". Keep the embedding block
+   (11–14) intact; keep toy numbers consistent (§2).
+2. **Rehearsal is the real bottleneck** (his own admission) and there are only ~3 hours
+   left. Push him to read `transcript.md` aloud 2–3 full passes against the clock
+   rather than polishing slides. The transcript carries running totals so he can check
+   the clock mid-talk. If he overruns, steal from slide 16 — never from 11–14.
+3. Everything is committed and pushed as of Tue ~10:45 am. If further edits happen,
+   commit + push again before he leaves — he may present from a different machine.
 4. Poster (external designer, from `design_brief.txt`) — outstanding for two sessions,
    lecture is today; almost certainly dead. Ask before spending any time.
 5. Dead: the deep "query time" walkthrough (`lecture_project.md` TODO, `lesson.md`

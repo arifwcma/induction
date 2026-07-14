@@ -145,8 +145,6 @@ def add_footer(slide, prs):
     faccent = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(fy), prs.slide_width, Inches(0.04))
     solid(faccent, TEAL)
     no_line(faccent)
-    txt(slide, 0.65, fy, 5.0, fh, [("ICT108  ·  MetMate case study", 10, MUTED, False, False, None)],
-        anchor=MSO_ANCHOR.MIDDLE)
     right_box = slide.shapes.add_textbox(Inches(5.8), Inches(fy), Inches(SLIDE_W - 5.8 - 0.45), Inches(fh))
     tf = right_box.text_frame
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -255,10 +253,6 @@ def build_s01_title(prs, notes):
     solid(strip, TEAL)
     no_line(strip)
 
-    eb = txt(slide, 0.65, 1.25, 11.0, 0.4,
-             [("GUEST LECTURE   ·   ICT108   ·   SYDNEY MET", 13, TEAL, True, False, None)])
-    set_letterspacing(eb.text_frame.paragraphs[0].runs[0], 2.4)
-
     txt(slide, 0.62, 1.7, 12.0, 1.3, [("Talk to Your Documents", 46, WHITE, True, False, 1.0)])
 
     ul = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.68), Inches(2.72), Inches(1.9), Inches(0.08))
@@ -270,19 +264,6 @@ def build_s01_title(prs, notes):
           17, MUTED, False, False, 1.1)])
 
     txt(slide, 0.65, 3.85, 11.5, 0.45, [("Case study: MetMate", 15, TEAL, True, False, None)])
-    txt(slide, 0.65, 4.28, 11.5, 0.45,
-        [("An invented chatbot answering Sydney Met student questions — enrolment, library, exams.",
-          13, MUTED, False, True, None)])
-
-    promise = card(slide, 0.65, 5.0, 10.2, 0.95, fill=PANEL, line_color=PANEL_LINE)
-    txt(slide, 0.92, 5.0, 9.7, 0.95,
-        [("Concepts over terminology: every technical term arrives only when the story needs it,", 12, MUTED, False, True, 1.25),
-         ("defined in plain English. Nothing to memorise up front — everything is look-up-able later.", 12, MUTED, False, True, None)],
-        anchor=MSO_ANCHOR.MIDDLE)
-
-    txt(slide, 0.65, 6.25, 12.2, 0.4,
-        [("Phase 1  Just ask ChatGPT   →   Phase 2  Our own bot   →   Phase 3  Search first   →   "
-          "Phase 4  Search by meaning   →   Phase 5  Toward the real world", 10.5, TEAL, False, False, None)])
 
     add_logo(slide, 1.0, top=0.45)
     add_footer(slide, prs)
